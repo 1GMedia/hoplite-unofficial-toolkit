@@ -18,6 +18,105 @@ notice.
 This is a toolkit, not a complete SDK. The reusable client layer can be split
 from the CLI if a stable programmatic API becomes useful.
 
+## Use cases
+
+### Check authentication before an operation
+
+Confirm that the local OAuth session exists, has safe file permissions, and is
+still refreshable without displaying credential values:
+
+```bash
+bun run hoplite -- auth
+```
+
+### Inventory projects and active tasks
+
+List accessible projects, search active or archived threads, and generate a
+bounded status summary without opening the Hoplite web interface:
+
+```bash
+bun run hoplite -- projects
+bun run hoplite -- threads --status running
+bun run hoplite -- threads --archived=true
+bun run hoplite -- status
+```
+
+### Inspect a task before intervening
+
+Read one task and its recent redacted timeline, then check whether it can
+execute and how much usage it has accumulated:
+
+```bash
+bun run hoplite -- inspect <thread-id>
+bun run hoplite -- thread-capability <thread-id>
+bun run hoplite -- thread-usage <thread-id>
+```
+
+### Send a guarded follow-up message
+
+Steer an existing allowlisted task without copying browser cookies or manually
+using the Hoplite UI. The stable operation ID makes the attempted delivery
+traceable:
+
+```bash
+export HOPLITE_MUTATION_ALLOWLIST='<thread-id>'
+bun run hoplite -- message <thread-id> \
+  --text 'Continue the assigned task and report verification evidence' \
+  --client-operation-id follow-up-20260824-001 \
+  --confirm
+```
+
+### Recover a stalled task deliberately
+
+Stop an exact current run, retry a task, or compact its context. These actions
+remain allowlist-only and require explicit confirmation:
+
+```bash
+bun run hoplite -- thread-stop <thread-id> --run-id <run-id> --confirm
+bun run hoplite -- thread-retry <thread-id> --confirm
+bun run hoplite -- thread-compact <thread-id> --confirm
+```
+
+### Create tasks idempotently
+
+Create a new Hoplite task while supplying a stable operation ID so an ambiguous
+network result can be reconciled safely instead of creating duplicates:
+
+```bash
+bun run hoplite -- create-thread <project-id> \
+  --prompt 'Implement the requested change and run the relevant tests' \
+  --client-operation-id create-task-20260824-001 \
+  --confirm
+```
+
+### Inspect repository and delivery state
+
+Discover repositories and branches exposed to Hoplite, then inspect pull
+request and preview-verification state for a task:
+
+```bash
+bun run hoplite -- repositories
+bun run hoplite -- branches <repository-id>
+bun run hoplite -- repo-inspect <repository-id>
+bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- thread-pr-comments <thread-id>
+bun run hoplite -- thread-preview-checklist <thread-id>
+```
+
+### Give Codex a safer Hoplite interface
+
+Install the bundled skill so Codex can choose bounded reads by default and use
+dedicated guarded commands when you explicitly approve a task mutation. This is
+useful for task coordination, operational summaries, and repeatable recovery
+workflows without teaching each Codex session the route details again.
+
+### What this does not prove
+
+An HTTP success response proves that Hoplite accepted a request. It does not
+prove that an agent completed the task, a remote process stayed alive, a test
+passed, or a deployment succeeded. Verify those outcomes using fresh task
+output and the appropriate external runtime evidence.
+
 ## Setup
 
 Requirements: Bun, the official Hoplite CLI, and a Hoplite account.
