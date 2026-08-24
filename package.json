@@ -1,0 +1,20 @@
+{
+  "name": "hoplite-unofficial-toolkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unofficial guarded Hoplite compatibility CLI and Codex skill",
+  "type": "module",
+  "scripts": {
+    "hoplite": "bun packages/cli/src/index.ts",
+    "test": "bun test packages/cli/src/index.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build packages/cli/src/index.ts --target bun --outdir dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.3"
+  }
+}
