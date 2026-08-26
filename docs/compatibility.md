@@ -46,6 +46,46 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Project sandbox overrides and prebuild enablement through the public project
+  response.
+- Up to five projected project prebuild records through
+  `GET /api/projects/:projectId/prebuilds`.
+
+The prebuild projection keeps only the evidenced ID, status, repository,
+commit, trigger, timestamps, active-state marker, and failure-detail presence.
+It never returns the failure message or unknown fields. A successful call marks
+availability only for the current credential and principal; registry auth
+compatibility remains `unverified` until that route is deliberately verified.
+The sandbox state digest binds both `sandboxSpec` field presence and normalized
+override status, preserving the distinction between an omitted field and an
+explicit `null` inheritance override.
+
+## Blocked prebuild rebake
+
+The authenticated client evidences
+`POST /api/projects/:projectId/prebuilds/rebake` with no request body and a
+response containing `dispatched` plus optional `eligible` integers. The action
+can consume compute and the client contract has no idempotency key. Therefore:
+
+- `project-prebuilds-plan-rebake` validates an exact owner-only, at-most-24-hour
+  `project.prebuilds.rebake` W2 grant and binds a local plan to prior prebuild
+  and sandbox state digests. It writes a new `0600` plan file whose digest also
+  binds owner, workspace, origin, project, capability, action risk, resource
+  risk ceiling, policy issue/expiry times, and the observed no-body POST
+  contract;
+- the plan performs no network I/O and reports remote apply as blocked; and
+- `project-prebuilds-apply` accepts only an owner-only plan file, recomputes its
+  digest and exact-grant digest, revalidates the still-current policy identity,
+  requires supplied digests from fresh reads to match before returning a
+  non-retryable blocked receipt with no remote request or state change.
+
+The apply receipt distinguishes supplied digest equality from live-state proof;
+the local command does not contact Hoplite and cannot independently attest that
+the caller actually performed the fresh reads.
+
+The POST must remain unavailable until OAuth compatibility, owner capability,
+compute impact, idempotency or ambiguous-result reconciliation, and post-write
+readback are verified in an isolated project.
 
 ## Guarded compatibility actions
 
@@ -68,10 +108,12 @@ segments. The validated canonical path is the same representation used to
 construct the fetch URL. Thread and settings writes cannot be re-enabled with
 an allowlist or `--confirm`; they require dedicated commands.
 
-## Future settings resource policy
+## Settings resource policy
 
 The local `resource-policy-check` command validates the policy prerequisite for
-future project/workspace writes. This release does not implement those writes.
+project/workspace writes. The prebuild rebake planner consumes an exact W2
+project grant for local planning only; it does not authorize or execute the
+remote POST. No executable settings write is included in this release.
 The policy file must be opened without following symlinks, be a regular file
 owned by the current user, use owner-only mode `0400` or `0600`, be 32 KB or
 smaller, and be valid for at most 24 hours. Its strict JSON

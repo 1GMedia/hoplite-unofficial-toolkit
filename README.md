@@ -139,6 +139,60 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Inspect sandbox and warm-snapshot state
+
+Read only the project sandbox override fields from the public project contract,
+then inspect at most five warm-snapshot records from the authenticated-client
+prebuild contract:
+
+```bash
+bun run hoplite -- project-sandbox-get <project-id>
+bun run hoplite -- project-prebuilds-status <project-id>
+```
+
+Both commands return a deterministic `stateDigest`. The prebuild result omits
+failure text, scripts, instructions, credentials, and unknown response fields.
+The sandbox digest includes whether `sandboxSpec` was missing versus explicitly
+`null`, so an omitted field cannot collide with an inherited-default override.
+A successful compatibility read confirms only the current credential and
+principal; it does not make the undocumented prebuild route a stable public API.
+
+The authenticated client also evidences a compute-consuming, no-body rebake
+POST. The toolkit can validate a short-lived owner policy and produce a local
+W2 review plan, but it does not send that POST:
+
+```bash
+bun run hoplite -- project-prebuilds-plan-rebake <project-id> \
+  --policy <owner-only-policy.json> \
+  --account-id <account-id> \
+  --workspace-id <workspace-id> \
+  --origin https://api.hoplite.sh \
+  --prebuild-digest <project-prebuilds-status-state-digest> \
+  --sandbox-digest <project-sandbox-get-state-digest> \
+  --output <rebake-plan.json>
+
+bun run hoplite -- project-prebuilds-apply <project-id> \
+  --plan <rebake-plan.json> \
+  --policy <same-owner-only-policy.json> \
+  --account-id <same-account-id> \
+  --workspace-id <same-workspace-id> \
+  --origin https://api.hoplite.sh \
+  --prebuild-digest <fresh-project-prebuilds-status-state-digest> \
+  --sandbox-digest <fresh-project-sandbox-get-state-digest>
+```
+
+The planner creates a new `0600` file and refuses to overwrite an existing
+path. Its digest covers the policy issue/expiry times, capability, action risk,
+resource risk ceiling, account, workspace, origin, project, both state digests,
+and exact observed contract. `project-prebuilds-apply` securely reloads that
+owner-only file, recomputes its plan and exact-grant digests, revalidates the
+same still-current resource policy, and requires supplied digests from fresh
+reads to match the plan. It remains deliberately local and emits a blocked
+receipt with `remoteRequestSent: false` and `remoteStateChanged: false`; it does
+not claim the supplied digests prove live state. Rebake has no evidenced
+idempotency key or safe ambiguous-result recovery, so agents must not retry or
+reproduce it through the generic API.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +227,8 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- project-sandbox-get <project-id>
+bun run hoplite -- project-prebuilds-status <project-id>
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
