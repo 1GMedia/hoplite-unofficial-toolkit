@@ -35,3 +35,8 @@ local allowlist plus explicit confirmation.
 Static client evidence proves that a web build called a route; it does not
 guarantee future compatibility or authorization through every credential type.
 An accepted write is a delivery receipt, not proof that remote work completed.
+
+The client evidence also supports read-only MCP discovery at
+`GET /api/mcp/servers?projectId=...` and `GET /api/mcp/catalog`. Those routes
+are surfaced through strict, credential-free projections, but their OAuth/API
+key compatibility remains unverified until a supported credential succeeds.

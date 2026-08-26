@@ -1,6 +1,6 @@
 ---
 name: hoplite-cli
-description: Inspect and operate Hoplite tasks through the unofficial guarded CLI when a request involves Hoplite authentication, projects, threads, timelines, repositories, or explicitly approved task actions.
+description: Inspect and operate Hoplite through the unofficial guarded CLI when a request involves authentication, projects, project MCP discovery, threads, timelines, repositories, or explicitly approved task actions.
 ---
 
 # Hoplite CLI
@@ -36,6 +36,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-mcp-list <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-mcp-catalog
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +52,20 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+For project MCP discovery, use `project-mcp-list` and
+`project-mcp-catalog` instead of the generic `api` command. Each performs one
+fixed-route read without retrying and returns only bounded transport,
+authentication-status, capability, and catalog metadata. Never infer that a
+`401` means the route is absent: it means credential compatibility remains
+unsupported or unverified. Treat `403` as a role denial. Do not attempt to
+recover omitted MCP URLs, headers, environment variables, local commands,
+arguments, tokens, or credentials from browser state or raw responses.
+Catalog pagination deliberately reports only the current page count, an
+optional validated global total, whether more pages exist, and cursor presence.
+Never treat the page count as a global total or attempt to recover the raw
+cursor. OAuth `connected` status may be inferred from an opaque token-container
+presence, but the token container must never be inspected or printed.
 
 ## Mutations
 
