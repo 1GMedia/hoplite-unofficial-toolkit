@@ -36,6 +36,7 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-api-key-capabilities
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -78,6 +79,16 @@ work around its canonical path checks or use it for a settings mutation. Future
 project/workspace writes also require an owner-only expiring resource policy;
 `resource-policy-check --file <policy.json>` validates that local prerequisite
 without authorizing or changing Hoplite state.
+
+Use `workspace-api-key-capabilities` only to inspect the fixed local coverage
+enums for workspace API-key create, list, and revoke. It accepts no arguments,
+does not authenticate or inspect existing credentials, and does not access
+files, Keychain, browser state, a client, or the network. Do not confuse it
+with `api-auth`, which checks whether an already configured caller credential
+is present. Create remains blocked until its exact schema, owner/admin proof,
+isolated target workspace, and owner-only non-stdout secret sink are all
+evidenced. List and revoke remain unregistered and blocked; never guess their
+routes.
 
 ## Completion evidence
 

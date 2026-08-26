@@ -15,6 +15,7 @@ export type LocalCommandDefinition = {
   name: string;
   description: string;
   transport: 'local';
+  validate?: (context: LocalCommandContext) => void;
   run: (context: LocalCommandContext) => CommandResult | Promise<CommandResult>;
 };
 
@@ -22,6 +23,7 @@ export type McpCommandDefinition = {
   name: string;
   description: string;
   transport: 'mcp';
+  validate?: (context: LocalCommandContext) => void;
   run: (context: McpCommandContext) => CommandResult | Promise<CommandResult>;
 };
 

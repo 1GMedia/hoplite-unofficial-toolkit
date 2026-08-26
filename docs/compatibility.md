@@ -40,6 +40,28 @@ only identity changes and added, removed, or modified capability IDs. If a
 status snapshot was created with `--area`, the filter is stored and reused by
 the diff. Programmatic comparisons with mismatched filters fail closed.
 
+## Workspace API-key capability report
+
+`workspace-api-key-capabilities` is an implemented `LOCAL`/`R0` report. It
+accepts no positionals or flags and emits only fixed capability,
+authentication, secret-sink requirement, implementation-status, and risk
+enums. It does not create a client, start OAuth, read credentials or browser
+state, access macOS Keychain, inspect a workspace, or make a network request.
+
+Official Hoplite CLI documentation says workspace API keys authenticate the
+CLI, scripts, and API automation. Authenticated-client evidence registers only
+creation at `POST /api/api-keys`, including one-time-secret behavior. Creation
+therefore remains blocked at `W3` until all four gates are evidenced and
+implemented: exact request/response schema, owner/admin authorization proof, an
+isolated target workspace, and a non-stdout owner-only sink using macOS
+Keychain or an explicit `0600` file. Exact list and revoke contracts are not
+evidenced; those actions remain unregistered and blocked, and no paths are
+guessed for them.
+
+The existing `api-auth` command serves a different purpose: it checks an
+already configured caller credential. The capability report neither invokes
+that command nor inspects the credential.
+
 ## Compatibility reads
 
 - Thread execution capability.
