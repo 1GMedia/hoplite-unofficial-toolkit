@@ -46,6 +46,42 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Fixed 7/30/90-day aggregate workspace usage totals.
+- Workspace billing policy and recent-grant aggregates.
+- Workspace credit availability, plan configuration, and redacted subscription
+  status.
+
+The billing commands are reconstructed from the authenticated client, not the
+public OpenAPI. They accept no resource identifiers. Grant reads use a fixed
+`limit=10`; usage totals derive exact `from` and `to` timestamps from one of
+three fixed windows. Every response passes a 2 MiB raw-text ceiling before
+parsing, exact MCP/API envelope checks, command-specific schemas, row and string
+ceilings, and an allowlist projection. Customer, feature, subscription, policy,
+subject, grant, and invoice identifiers are validated where required by the
+contract but never emitted. Provider/model/user details, grant descriptions and
+sources, invoice amounts, and invoice/payment URLs are also omitted.
+Provider timestamps are validated or used to construct the fixed usage query,
+but no timestamp is emitted in a command result. The `--days` value must be one
+of the exact strings `7`, `30`, or `90`; numeric variants fail before OAuth is
+read.
+The pinned client evidence contains subscription `active` and latest-invoice
+`open` status values. Those exact strings are allowlisted; null remains null,
+and every other status string is projected as the fixed value `unknown`.
+
+The executable billing commands are:
+
+```text
+usage-summary-get --days <7|30|90>
+billing-budgets-summary
+billing-grants-summary
+billing-summary-get
+billing-plan-get
+billing-subscription-status
+```
+
+Budget and plan updates, checkout, trial activation, subscription preview and
+hosted confirmation, cancellation, reactivation, top-up, and portal navigation
+remain `W3` blocked registry entries. No corresponding command is registered.
 
 ## Guarded compatibility actions
 
@@ -109,7 +145,7 @@ downgrade it.
 ## Intentionally excluded
 
 Archive/update, deletion, checkpoint restoration, PR mutations, terminal and
-log access, attachments, billing writes, credentials, and workspace recovery
-are not wrapped because their payloads, sensitivity, or side effects need
-stronger evidence and dedicated safety design. Their discovered contracts may
-appear in the registry without becoming executable.
+log access, attachments, billing writes or provider handoffs, credentials, and
+workspace recovery are not wrapped because their payloads, sensitivity, or side
+effects need stronger evidence and dedicated safety design. Their discovered
+contracts may appear in the registry without becoming executable.

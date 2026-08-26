@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { usageBillingCommandDefinitions } from './usage-billing-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,11 +63,36 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...usageBillingCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
     for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
+  test('validates usage and billing feature arguments before reading OAuth state', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-billing-preflight-test-'));
+    const previousPath = process.env.HOPLITE_OAUTH_PATH;
+    process.env.HOPLITE_OAUTH_PATH = join(directory, 'deliberately-missing-oauth.json');
+    try {
+      await expect(run(['billing-plan-get', 'unexpected']))
+        .rejects.toThrow('does not accept positional arguments');
+      await expect(run(['billing-summary-get', '--details']))
+        .rejects.toThrow('Unsupported flag: --details');
+      await expect(run(['usage-summary-get', '--from=2026-01-01']))
+        .rejects.toThrow('Unsupported flag: --from');
+      for (const days of ['07', '7.0', ' 30', '+90']) {
+        await expect(run(['usage-summary-get', `--days=${days}`]))
+          .rejects.toThrow('--days must be exactly 7, 30, or 90');
+      }
+    } finally {
+      if (previousPath === undefined) delete process.env.HOPLITE_OAUTH_PATH;
+      else process.env.HOPLITE_OAUTH_PATH = previousPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test('parses positional values and both flag forms', () => {
