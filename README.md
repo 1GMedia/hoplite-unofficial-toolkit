@@ -139,6 +139,28 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Discover project MCP connections safely
+
+Read the MCP servers attached to one project or inspect the available MCP
+catalog without printing connection configuration:
+
+```bash
+bun run hoplite -- project-mcp-list <project-id>
+bun run hoplite -- project-mcp-catalog
+```
+
+These compatibility reads make exactly one request and do not retry. Their
+output is limited to server/catalog identifiers, bounded labels, enabled state,
+normalized transport and authentication status, and bounded capability/tag
+names. Endpoint URLs, request headers, environment maps, local commands and
+arguments, credentials, and token material are never returned. A `401` means
+the credential type is unsupported or unverified for the route; `403` means
+the authenticated role was denied. Neither result is treated as route absence.
+Catalog pagination reports only the current `pageCount`, a validated global
+`totalCount` when the server supplied one, `hasMore`, and whether a bounded next
+cursor exists. The cursor itself is never printed. OAuth token-container
+presence may produce `connected`; token values are never inspected or emitted.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +195,8 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- project-mcp-list <project-id>
+bun run hoplite -- project-mcp-catalog
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

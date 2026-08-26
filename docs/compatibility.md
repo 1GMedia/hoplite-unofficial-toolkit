@@ -46,6 +46,22 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Project MCP server discovery via
+  `GET /api/mcp/servers?projectId=<project-id>`.
+- MCP catalog discovery via `GET /api/mcp/catalog`.
+
+The MCP discovery commands are implemented with authentication status still
+marked `unverified`. Each makes one request without retrying and distinguishes
+unsupported credentials (`401`), role denial (`403`), missing project or route
+(`404`), unavailable method (`405`), and response-schema drift. Successful
+responses are projected onto bounded identifiers, labels, normalized transport
+and authentication status, and bounded capabilities/categories. URLs, headers,
+environment maps, stdio commands/arguments, credentials, and secret values are
+not emitted. OAuth token containers are treated as opaque and contribute only
+pending/connected status. New unrecognized secret-bearing response fields fail
+closed. Catalog pagination exposes the current `pageCount`, nullable validated
+global `totalCount`, `hasMore`, and next-cursor presence; it never emits a raw
+cursor or substitutes the current page size for an unknown global total.
 
 ## Guarded compatibility actions
 

@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { projectMcpCommandDefinitions } from './project-mcp-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,7 +63,9 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set(
+      [...foundationCommandDefinitions, ...projectMcpCommandDefinitions].map(command => command.name),
+    );
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
