@@ -46,6 +46,33 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Six workspace boolean defaults through their exact `/api/orgs/*` GET routes.
+- Workspace sandbox defaults, optional staff ceilings, and a null or
+  `docker-compose` runtime profile.
+- Anthropic/OpenAI model-key presence, without key values.
+- Bounded model connections, models, transports, status, and verification
+  metadata, without provider error content.
+
+The corresponding CLI commands are:
+
+```bash
+bun run hoplite -- workspace-defaults-get
+bun run hoplite -- workspace-sandbox-default-get
+bun run hoplite -- workspace-model-keys-status
+bun run hoplite -- workspace-model-connections-list
+```
+
+These workspace routes were reconstructed from the authenticated web client and
+are absent from the recorded public OpenAPI. Their OAuth/MCP compatibility is
+therefore still unverified. A credential failure is not treated as evidence
+that the product feature is absent. The commands distinguish 401, 402, 403,
+404, and 501 outcomes, reject HTTP 200 schema drift, require one exact safe MCP
+text envelope, cap raw text at 2 MiB before parsing, use a 20-second timeout,
+and never retry.
+
+Workspace name, logo, and slug are read and changed through Better Auth browser
+organization state. No exact OAuth-compatible HTTP contract is proven, so the
+CLI does not surface those operations.
 
 ## Guarded compatibility actions
 
@@ -113,3 +140,9 @@ log access, attachments, billing writes, credentials, and workspace recovery
 are not wrapped because their payloads, sensitivity, or side effects need
 stronger evidence and dedicated safety design. Their discovered contracts may
 appear in the registry without becoming executable.
+
+Workspace remote apply is also excluded. POST updates for boolean defaults and
+sandbox defaults, provider-key PUT/DELETE, and model-connection
+POST/PATCH/DELETE are recorded as blocked. They are not enabled by the generic
+API command, mutation allowlist, confirmation flag, or resource-policy parser.
+The CLI accepts no model-provider secret input.

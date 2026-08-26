@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { workspaceSettingsCommandDefinitions } from './workspace-settings-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,11 +63,30 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...workspaceSettingsCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
     for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
+  test('rejects invalid workspace feature arguments before reading OAuth', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-workspace-preflight-test-'));
+    const previousPath = process.env.HOPLITE_OAUTH_PATH;
+    process.env.HOPLITE_OAUTH_PATH = join(directory, 'missing-oauth.json');
+    try {
+      await expect(run(['workspace-model-keys-status', 'unexpected']))
+        .rejects.toThrow('does not accept positional');
+      await expect(run(['workspace-model-connections-list', '--details']))
+        .rejects.toThrow('does not accept flags');
+    } finally {
+      if (previousPath === undefined) delete process.env.HOPLITE_OAUTH_PATH;
+      else process.env.HOPLITE_OAUTH_PATH = previousPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test('parses positional values and both flag forms', () => {

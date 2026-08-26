@@ -139,6 +139,36 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Inspect workspace defaults and model connections
+
+Four dedicated commands expose the authenticated-client reads whose response
+contracts are exact enough to validate and safely project:
+
+```bash
+bun run hoplite -- workspace-defaults-get
+bun run hoplite -- workspace-sandbox-default-get
+bun run hoplite -- workspace-model-keys-status
+bun run hoplite -- workspace-model-connections-list
+```
+
+`workspace-defaults-get` reads public-media sharing, agent complaint reporting,
+the agent task system, PR-review autofix and auto-merge defaults, and automatic
+archival of merged tasks. `workspace-model-keys-status` reports only whether an
+Anthropic or OpenAI key is configured. It cannot retrieve a key value.
+Model-connection output is bounded and suppresses provider error content.
+
+These compatibility reads do not prove that the current OAuth credential or
+deployment supports a route. Results distinguish unsupported credentials,
+subscription requirements, role denial, unavailable routes, unavailable
+deployments, request failures, and response-schema drift. The commands do not
+retry.
+
+Workspace identity uses Better Auth browser organization state, so name, logo,
+and slug do not yet have a proven OAuth-compatible CLI read contract. Remote
+apply remains blocked for organization identity, workspace defaults, sandbox
+defaults, provider keys, and model connections. In particular, no command
+accepts a provider key or connection secret as a flag.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +203,10 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- workspace-defaults-get
+bun run hoplite -- workspace-sandbox-default-get
+bun run hoplite -- workspace-model-keys-status
+bun run hoplite -- workspace-model-connections-list
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
