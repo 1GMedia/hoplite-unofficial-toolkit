@@ -36,6 +36,7 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts account-settings-capabilities
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +51,16 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Use `account-settings-capabilities` (optionally with exact `--area profile`,
+`personalization`, or `preferences`) for account-setting gap analysis. This is
+a local fixed-metadata command: it does not authenticate, read cloud state, or
+emit account values, personal-context rows, identifiers, text, lengths, or
+digests. It also emits no numeric counters or boolean cloud/network claims.
+Profile and remaining personalization stay behind Better Auth browser
+sessions. Personal memory/skill inventory belongs to the separate PR #10 lane,
+and preferences are browser/device-local rather than Hoplite cloud state. Do
+not infer or guess account-setting reads or writes from this evidence.
 
 ## Mutations
 

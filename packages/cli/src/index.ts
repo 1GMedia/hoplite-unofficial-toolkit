@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
+import { accountSettingsCapabilityCommandDefinitions } from './account-settings-capabilities';
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
 
@@ -84,7 +85,10 @@ const THREAD_ACTION_COMMANDS = new Set([
   'thread-auto-title',
 ]);
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
-const FEATURE_COMMANDS = createCommandRegistry([foundationCommandDefinitions]);
+const FEATURE_COMMANDS = createCommandRegistry([
+  foundationCommandDefinitions,
+  accountSettingsCapabilityCommandDefinitions,
+]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? 'help';

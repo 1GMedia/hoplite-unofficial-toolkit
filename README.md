@@ -139,6 +139,25 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+Account settings have a narrower local-only gap report:
+
+```bash
+bun run hoplite -- account-settings-capabilities
+bun run hoplite -- account-settings-capabilities --area profile
+bun run hoplite -- account-settings-capabilities --area personalization
+bun run hoplite -- account-settings-capabilities --area preferences
+```
+
+The optional area is exact and the command never authenticates or reads cloud
+state. It emits fixed capability, authentication, persistence, status, risk,
+dependency, and evidence-tier enums plus implemented command names only; no
+numeric counters or boolean state claims are part of the output contract.
+Profile/session operations and the remaining personalization fields are Better
+Auth browser-session boundaries. Personal memory and skill inventories are
+identified as a separate PR #10 dependency, not duplicated on this branch.
+Preferences are browser/device-local and are never reported as Hoplite cloud
+state. All account-setting writes remain unavailable here.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +192,7 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- account-settings-capabilities
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
