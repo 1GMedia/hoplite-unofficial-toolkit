@@ -36,6 +36,10 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-defaults-get
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-sandbox-default-get
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-model-keys-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-model-connections-list
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +54,19 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Workspace settings commands accept no positionals or flags. Treat
+`unsupported_credential`, `subscription_required`, `role_denied`,
+`absent_or_unavailable`, `deployment_unavailable`, `request_failed`, and
+`schema_drift` as distinct results. Do not infer that a Hoplite feature is
+absent from a credential or role failure, and do not retry these reads
+automatically.
+
+`workspace-model-keys-status` exposes presence only. Never attempt to obtain or
+print a provider key. `workspace-model-connections-list` suppresses
+`lastError` content and returns only bounded metadata. Workspace name/logo/slug
+remain a Better Auth browser-state boundary with no proven OAuth-compatible
+read route.
 
 ## Mutations
 
@@ -72,6 +89,10 @@ operation ID when the first result is ambiguous.
 Do not guess undocumented routes or payloads. Archive/update, delete,
 checkpoint restore, PR mutations, terminal/log access, attachments, billing,
 and workspace recovery remain outside the dedicated command surface.
+
+Workspace-default writes, sandbox-default writes, provider-key changes, and
+model-connection create/update/delete are also blocked. Do not pass provider
+keys or connection secrets through flags, prompts, logs, or shell history.
 
 The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
 work around its canonical path checks or use it for a settings mutation. Future
