@@ -123,6 +123,7 @@ bun run hoplite -- settings-capabilities
 bun run hoplite -- settings-capabilities --area project-mcp
 bun run hoplite -- compatibility-status
 bun run hoplite -- compatibility-status --area project-environment
+bun run hoplite -- workspace-api-key-capabilities
 ```
 
 Save a status result using shell redirection, then compare it after an update.
@@ -138,6 +139,20 @@ The snapshot records its OpenAPI and client identity, source tier, method and
 path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
+
+`workspace-api-key-capabilities` is narrower still: it accepts no arguments and
+returns only fixed enums for create, list, and revoke coverage. It performs no
+authentication, network request, credential-file read, Keychain read, or
+workspace inspection. API-key creation remains blocked until the exact
+request/response contract, owner/admin authorization, an isolated target
+workspace, and a non-stdout owner-only sink (macOS Keychain or an explicit
+`0600` file) are all implemented and evidenced. List and revoke remain
+unregistered and blocked because their exact contracts have not been
+evidenced.
+
+This differs from `api-auth`, which checks whether an already configured caller
+credential is available. The capability report never invokes `api-auth` and
+never checks that credential.
 
 ### What this does not prove
 
