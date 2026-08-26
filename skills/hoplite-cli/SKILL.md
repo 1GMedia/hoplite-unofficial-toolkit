@@ -36,6 +36,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-settings-get <project-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-settings-resolve <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-repository-get <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-repository-resolve <project-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
@@ -66,6 +68,27 @@ authenticated-client compatibility route
 unverified live. Treat `401`, `403`, and `404` as results for the current
 credential and principal, not proof that the browser feature is unavailable.
 Do not infer effective preview-port precedence from this command.
+
+For a repository change, start with `project-repository-get` and retain its
+`stateDigest`, then use `project-repository-resolve` to verify the Hoplite
+repository ID, full name, default branch, saved base branch, and repo-settings
+status. Do not treat a missing catalog match as proof that the binding is gone;
+the current credential or provider catalog may be incomplete.
+
+`project-repository-plan-bind` and `project-repository-plan-unbind` are local
+W2 planning commands. They require an owner-only, maximum-24-hour resource
+policy with the exact project and `project.repository.bind` or
+`project.repository.unbind` capability, plus the before-state digest and a
+stable client operation ID. A successful plan means the local policy matched;
+it does not authorize or execute a remote write.
+
+Never attempt repository apply through the generic API. The dedicated
+`project-repository-apply` command is intentionally local and blocked because
+PATCH OAuth authorization, strict name/script preservation, readback, and
+ambiguous-result reconciliation are unverified. The exact unbind payload was
+not observed, and the unbind plan's `local-inference` evidence tier does not
+claim any remote route or method. Use Hoplite settings for the actual change
+until those contracts are verified.
 
 ## Mutations
 

@@ -18,6 +18,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
 import { redactSecrets, redactText } from './output-safety';
+import { projectRepositoryCommandDefinitions } from './project-repository-commands';
 import { projectSettingsCommandDefinitions } from './project-settings-commands';
 
 export { redactSecrets, redactText } from './output-safety';
@@ -90,6 +91,7 @@ const THREAD_ACTION_COMMANDS = new Set([
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
 const FEATURE_COMMANDS = createCommandRegistry([
   foundationCommandDefinitions,
+  projectRepositoryCommandDefinitions,
   projectSettingsCommandDefinitions,
 ]);
 
