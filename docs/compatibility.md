@@ -40,6 +40,24 @@ only identity changes and added, removed, or modified capability IDs. If a
 status snapshot was created with `--area`, the filter is stored and reused by
 the diff. Programmatic comparisons with mismatched filters fail closed.
 
+## Account settings boundary
+
+`account-settings-capabilities` is a separate local-only gap registry for the
+`profile`, `personalization`, and `preferences` areas. Its optional `--area`
+accepts exactly one of those values. The output is limited to fixed capability,
+authentication, persistence, status, risk, dependency, and evidence-tier enums
+plus names of commands actually implemented on the current branch. Numeric
+counters and boolean cloud/network state claims are excluded from the output
+contract.
+
+The delivered client proves profile/session and remaining personalization
+behavior behind Better Auth browser sessions, but it does not prove a compatible
+OAuth or API-key CLI contract. The separate personal-context PR #10 is recorded
+as a dependency rather than copied into this branch. Browser/device preferences
+are recorded as local client persistence, never cloud state. The command does
+not authenticate, create a client, make a network request, read any account
+value, or implement an account-setting write.
+
 ## Compatibility reads
 
 - Thread execution capability.
