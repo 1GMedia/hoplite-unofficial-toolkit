@@ -1,6 +1,6 @@
 ---
 name: hoplite-cli
-description: Inspect and operate Hoplite tasks through the unofficial guarded CLI when a request involves Hoplite authentication, projects, threads, timelines, repositories, or explicitly approved task actions.
+description: Inspect and operate Hoplite through the unofficial guarded CLI when a request involves authentication, projects, sandbox or prebuild status, threads, timelines, repositories, or explicitly approved task actions.
 ---
 
 # Hoplite CLI
@@ -34,6 +34,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-sandbox-get <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-prebuilds-status <project-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
@@ -72,6 +74,19 @@ operation ID when the first result is ambiguous.
 Do not guess undocumented routes or payloads. Archive/update, delete,
 checkpoint restore, PR mutations, terminal/log access, attachments, billing,
 and workspace recovery remain outside the dedicated command surface.
+
+For a requested warm-snapshot rebake, first run `project-prebuilds-status` and
+`project-sandbox-get`, then pass both exact `stateDigest` values to
+`project-prebuilds-plan-rebake`. The plan also requires an owner-only resource
+policy valid for at most 24 hours and granting `project.prebuilds.rebake` at W2.
+Write the plan to a new path with `--output`; the CLI creates it as `0600` and
+will not overwrite an existing file. Before `project-prebuilds-apply`, repeat
+both reads and supply their new digests along with the same plan and policy
+files and owner/workspace/origin identity. Apply recomputes the plan and
+revalidates policy freshness, but equality with caller-supplied digests is not
+independent live-state proof. It emits a local blocked receipt and never sends
+the compute-consuming POST. Do not retry, emulate, or bypass that block through
+`api`; the client contract contains no idempotency key.
 
 The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
 work around its canonical path checks or use it for a settings mutation. Future

@@ -17,6 +17,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { projectSandboxCommandDefinitions } from './project-sandbox-commands';
 
 type JsonObject = Record<string, unknown>;
 
@@ -84,7 +85,10 @@ const THREAD_ACTION_COMMANDS = new Set([
   'thread-auto-title',
 ]);
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
-const FEATURE_COMMANDS = createCommandRegistry([foundationCommandDefinitions]);
+const FEATURE_COMMANDS = createCommandRegistry([
+  foundationCommandDefinitions,
+  projectSandboxCommandDefinitions,
+]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? 'help';
