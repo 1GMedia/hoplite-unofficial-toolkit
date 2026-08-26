@@ -103,6 +103,28 @@ bun run hoplite -- thread-pr-comments <thread-id>
 bun run hoplite -- thread-preview-checklist <thread-id>
 ```
 
+### Inspect integration and binding status
+
+Read the source-control inventory and the installed Slack, Linear, or Sentry
+connections. Supplying `--project` uses the exact optional status query exposed
+by the authenticated client and includes aggregate binding presence/state for
+that project:
+
+```bash
+bun run hoplite -- source-control-connections
+bun run hoplite -- source-control-repositories
+bun run hoplite -- slack-status --project <project-id>
+bun run hoplite -- linear-status --project <project-id>
+bun run hoplite -- sentry-status --project <project-id>
+bun run hoplite -- phone-status
+```
+
+These commands make one read request and return aggregate counts only. They do
+not emit connection, repository, installation, workspace, team, channel,
+binding, project, or phone identifiers, and they never print arbitrary remote
+names, hosts, accounts, or status strings. Only totals, presence/state counts,
+and fixed evidenced provider/status enum counts are returned.
+
 ### Give Codex a safer Hoplite interface
 
 Install the bundled skill so Codex can choose bounded reads by default and use
@@ -173,6 +195,12 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- source-control-connections
+bun run hoplite -- source-control-repositories
+bun run hoplite -- slack-status --project <project-id>
+bun run hoplite -- linear-status --project <project-id>
+bun run hoplite -- sentry-status --project <project-id>
+bun run hoplite -- phone-status
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
