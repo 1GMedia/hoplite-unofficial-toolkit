@@ -47,6 +47,33 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Pull-request status and comments.
 - Preview checklist.
 
+### Project automations
+
+The authenticated client release recorded in the registry evidences these
+read-only contracts:
+
+- `GET /api/projects/:projectId/automations` returns exact
+  `{ ok, automations }` data. `project-automations-list` bounds the response to
+  100 rows; `project-automation-get` filters one ID locally from that same
+  one-call response instead of inventing a detail endpoint.
+- `GET /api/projects/:projectId/automations/status` returns exact
+  `{ ok, statuses, totals }` data.
+- `GET /api/projects/:projectId/automations/:automationId/executions?limit=N`
+  returns exact `{ ok, executions }` data with `N` bounded from 1 to 100.
+
+All three remote reads are single-attempt and schema-strict. Output includes
+operational IDs, enabled/trigger state, schedule type, timestamps, counts, and
+execution receipts. It omits prompts, titles, spend values, webhook token
+prefixes, dedupe keys, payload summaries, external destinations, and private
+error strings. HTTP 401/402/403/404/501 outcomes remain distinct from HTTP 200
+schema drift.
+
+The official [Automations documentation](https://hoplite.sh/docs/automations)
+confirms that automations are project-bound prompts triggered by schedules or
+webhooks and that each trigger starts a new thread/run. The internal read routes
+remain authenticated-client compatibility contracts and are absent from the
+reviewed public OpenAPI.
+
 ## Guarded compatibility actions
 
 - Append a message: `POST /api/threads/:id/messages`.
@@ -113,3 +140,9 @@ log access, attachments, billing writes, credentials, and workspace recovery
 are not wrapped because their payloads, sensitivity, or side effects need
 stronger evidence and dedicated safety design. Their discovered contracts may
 appear in the registry without becoming executable.
+
+Project automation create/update/enable/disable/run-now/delete operations are
+also metadata-only and blocked. Run-now can create a billable thread without an
+evidenced idempotency key, and webhook create/rotation can return a bearer
+credential. Webhook credential reads and rotations require a dedicated
+non-stdout secret sink before they can be considered for implementation.

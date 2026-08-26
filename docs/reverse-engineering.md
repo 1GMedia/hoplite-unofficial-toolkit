@@ -25,6 +25,16 @@ The reviewed OpenAPI exposed 12 operations during the assessment. The public
 web client contained a larger internal route surface, including the guarded
 thread actions documented in `compatibility.md`.
 
+The authenticated client release also evidenced project automation list,
+status, execution-history, mutation, run-now, and webhook-credential routes.
+Its schemas distinguish `schedule` and `webhook` triggers, cron/interval
+schedules, and execution states `accepted`, `thread_created`, and `failed`.
+Official documentation independently confirms the trigger semantics, but the
+project-scoped management/read routes are not part of the reviewed OpenAPI.
+Only the bounded list/detail projection, aggregate status, and execution-receipt
+reads are implemented; every remote automation write and credential-returning
+route remains blocked.
+
 ## Reconstruction boundary
 
 Only routes with an evidenced method, path, request body, and caller were
