@@ -1,4 +1,10 @@
 import type { CliCommandDefinition, CommandResult } from './command-registry';
+import {
+  COMPATIBILITY_REGISTRY,
+  loadResourcePolicy,
+  type ResourcePolicy,
+  validateResourcePolicyGrant,
+} from './compatibility';
 
 type JsonObject = Record<string, unknown>;
 
@@ -20,6 +26,9 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_ENVIRONMENT_ENTRIES = 500;
 const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ENVIRONMENT_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const DEFAULT_API_ORIGIN = 'https://api.hoplite.sh';
+const PLAN_FLAG_NAMES = new Set(['client-operation-id', 'origin', 'policy']);
 const SENSITIVE_FIELD_RE = /(?:^|[_-])(?:value|secret|token|password|credential|authorization|api[_-]?key)(?:$|[_-])/i;
 const TRANSPORT_ERROR_MESSAGE = 'Project environment request transport failed; no remote error details were retained';
 
@@ -43,6 +52,137 @@ export function validatedEnvironmentKey(value: unknown): string {
     throw new ProjectEnvironmentSchemaError('an entry contains an invalid key');
   }
   return value;
+}
+
+export function validatedEnvironmentPlanOperationId(value: string | undefined): string {
+  const normalized = value?.trim();
+  if (!normalized || !OPERATION_ID_RE.test(normalized)) {
+    throw new Error('An explicit client-operation-id of 1 to 128 safe characters is required');
+  }
+  return normalized;
+}
+
+function validatedPlanOrigin(value: string | undefined): string {
+  const raw = value?.trim() || DEFAULT_API_ORIGIN;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('The planned API origin is invalid');
+  }
+  if (parsed.origin !== raw || (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(parsed.hostname))) {
+    throw new Error('The planned API origin must be an exact HTTPS or loopback origin');
+  }
+  return parsed.origin;
+}
+
+function requireExactPlanInputs(positionals: string[], flags: Map<string, string>): {
+  projectId: string;
+  key: string;
+  operationId: string;
+  origin: string;
+  policyPath: string;
+} {
+  if (positionals.length !== 2) {
+    throw new Error('Environment plans require exactly <project-id> <key>');
+  }
+  if ([...flags.keys()].some(name => !PLAN_FLAG_NAMES.has(name))) {
+    throw new Error('Environment plans accept only --policy, --client-operation-id, and --origin');
+  }
+  const policyPath = flags.get('policy');
+  if (!policyPath) throw new Error('Environment plans require --policy <owner-only-policy.json>');
+  return {
+    projectId: validatedProjectId(positionals[0]),
+    key: validatedEnvironmentKey(positionals[1]),
+    operationId: validatedEnvironmentPlanOperationId(flags.get('client-operation-id')),
+    origin: validatedPlanOrigin(flags.get('origin')),
+    policyPath,
+  };
+}
+
+type EnvironmentPlanAction = 'set' | 'unset';
+
+export function buildProjectEnvironmentMutationPlan(
+  action: EnvironmentPlanAction,
+  input: {
+    projectId: string;
+    key: string;
+    operationId: string;
+    origin?: string;
+  },
+  policy: ResourcePolicy,
+  now = new Date(),
+): CommandResult {
+  const projectId = validatedProjectId(input.projectId);
+  const key = validatedEnvironmentKey(input.key);
+  const clientOperationId = validatedEnvironmentPlanOperationId(input.operationId);
+  const origin = validatedPlanOrigin(input.origin);
+  const capabilityId = action === 'set'
+    ? 'project.environment.set'
+    : 'project.environment.unset';
+  const capability = COMPATIBILITY_REGISTRY.find(entry => entry.id === capabilityId);
+  if (!capability || capability.risk === 'R0') {
+    throw new Error('Environment plan capability is not a registered write');
+  }
+  const grant = validateResourcePolicyGrant(policy, {
+    accountId: policy.owner.accountId,
+    workspaceId: policy.owner.workspaceId,
+    origin,
+    kind: 'project',
+    resourceId: projectId,
+    capability: capabilityId,
+  }, now.getTime());
+  const path = `/api/projects/${encodeURIComponent(projectId)}/env-vars/${encodeURIComponent(key)}`;
+
+  return {
+    plannedAt: now.toISOString(),
+    operation: action === 'set' ? 'project-environment-plan-set' : 'project-environment-plan-unset',
+    clientOperationId,
+    target: { projectId, key },
+    request: {
+      method: action === 'set' ? 'PUT' : 'DELETE',
+      path,
+      bodyIncluded: false,
+    },
+    capability: {
+      id: capabilityId,
+      risk: capability.risk,
+      remoteStatus: capability.status,
+      authentication: capability.authStatus,
+    },
+    policyPrerequisite: {
+      structurallyAuthorized: grant.authorized,
+      origin,
+      expiresAt: policy.expiresAt,
+      ownerBinding: 'deferred-until-auth-compatible-apply',
+    },
+    apply: {
+      available: false,
+      networkRequests: 0,
+      reasonCode: 'remote-authentication-and-metadata-readback-unverified',
+      inputChannel: action === 'set' ? 'bounded-stdin-required-if-apply-is-added' : 'none',
+    },
+  };
+}
+
+export function planProjectEnvironmentMutation(
+  action: EnvironmentPlanAction,
+  positionals: string[],
+  flags: Map<string, string>,
+  now = new Date(),
+): CommandResult {
+  const input = requireExactPlanInputs(positionals, flags);
+  let policy: ResourcePolicy;
+  try {
+    policy = loadResourcePolicy(input.policyPath, now.getTime());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.startsWith('Resource policy ') || message === 'Unsupported resource policy version') {
+      throw new Error(message);
+    }
+    throw new Error('Environment plan policy could not be loaded');
+  }
+  return buildProjectEnvironmentMutationPlan(action, input, policy, now);
 }
 
 export function buildProjectEnvironmentListRequest(projectIdValue: string | undefined): {
@@ -218,6 +358,18 @@ export async function executeProjectEnvironmentList(
 }
 
 export const projectEnvironmentCommandDefinitions: readonly CliCommandDefinition[] = [
+  {
+    name: 'project-environment-plan-set',
+    description: 'Validate a policy-bound environment set plan without accepting data or contacting Hoplite',
+    transport: 'local',
+    run: ({ positionals, flags }) => planProjectEnvironmentMutation('set', positionals, flags),
+  },
+  {
+    name: 'project-environment-plan-unset',
+    description: 'Validate a policy-bound environment unset plan without contacting Hoplite',
+    transport: 'local',
+    run: ({ positionals, flags }) => planProjectEnvironmentMutation('unset', positionals, flags),
+  },
   {
     name: 'project-environment-list',
     description: 'List sorted environment variable names and update timestamps without reading values',

@@ -35,6 +35,12 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-environment-list <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-environment-plan-set \
+  <project-id> <KEY> --policy <owner-only-policy.json> \
+  --client-operation-id <stable-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-environment-plan-unset \
+  <project-id> <KEY> --policy <owner-only-policy.json> \
+  --client-operation-id <stable-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
@@ -49,6 +55,14 @@ route, and schema-drift results as distinct evidence, and do not retry. If the
 response contains values, unknown fields, or extra MCP content, the command
 fails closed. Do not substitute generic API access or browser inspection to
 recover environment values.
+
+The environment set/unset planners are local-only. They validate an owner-only,
+at-most-24-hour resource policy for the exact project and matching `W2`
+capability, then report that apply is blocked. The set planner does not read
+stdin and all planners reject data-bearing/body/file/confirmation flags. Do not
+pipe environment data into them. There is no environment apply command until
+CLI authentication compatibility, bounded stdin, and metadata-only readback
+are proven.
 
 Use `settings-capabilities --area <area>` to distinguish implemented commands
 from authenticated-client contracts that are only discovered or blocked. A

@@ -151,7 +151,26 @@ bun run hoplite -- project-environment-list <project-id>
 This client-derived read route has unverified CLI authentication compatibility.
 The command makes one request with no retry, returns only sorted metadata, and
 fails closed if Hoplite returns a value, an unknown field, extra MCP content, or
-an incompatible response. Environment set/unset commands are not included.
+an incompatible response.
+
+Local set/unset planners validate an exact project and key, a stable operation
+ID, and an owner-only resource policy without accepting environment data or
+contacting Hoplite:
+
+```bash
+chmod 400 hoplite-resource-policy.json
+bun run hoplite -- project-environment-plan-set <project-id> <KEY> \
+  --policy hoplite-resource-policy.json \
+  --client-operation-id operator-env-set-001
+bun run hoplite -- project-environment-plan-unset <project-id> <KEY> \
+  --policy hoplite-resource-policy.json \
+  --client-operation-id operator-env-unset-001
+```
+
+There is no apply command. Set plans do not read stdin and reject data-bearing,
+body, file, and confirmation flags. Remote writes remain blocked until CLI
+authentication compatibility, bounded stdin handling, and metadata-only
+readback are proven.
 
 ### What this does not prove
 
@@ -230,8 +249,8 @@ bun run hoplite -- api --method GET --path /api/projects
 Future project and workspace settings writes must also present an owner-owned,
 owner-only (`0400` or `0600`) resource policy with a lifetime no longer than 24
 hours.
-The parser is available now for local validation, but no settings write consumes
-it in this release:
+The parser is available now for local validation and environment plans consume
+it as a prerequisite, but no settings write is executable in this release:
 
 ```bash
 chmod 400 hoplite-resource-policy.json

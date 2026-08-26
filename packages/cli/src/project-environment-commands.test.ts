@@ -1,18 +1,42 @@
 import { describe, expect, test } from 'bun:test';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
+  buildProjectEnvironmentMutationPlan,
   buildProjectEnvironmentListRequest,
   executeProjectEnvironmentList,
   parseProjectEnvironmentEntries,
   parseProjectEnvironmentResponse,
+  planProjectEnvironmentMutation,
+  projectEnvironmentCommandDefinitions,
   validatedEnvironmentKey,
+  validatedEnvironmentPlanOperationId,
   validatedProjectId,
 } from './project-environment-commands';
+import { parseResourcePolicy } from './compatibility';
 
 function toolResult(response: unknown): unknown {
   return {
     content: [{ type: 'text', text: JSON.stringify(response) }],
   };
+}
+
+function environmentPolicy(capability: 'project.environment.set' | 'project.environment.unset') {
+  return parseResourcePolicy({
+    version: 1,
+    owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+    origins: ['https://api.hoplite.sh'],
+    resources: [{
+      kind: 'project',
+      id: 'prj_example',
+      capabilities: [capability],
+      riskCeiling: 'W2',
+    }],
+    issuedAt: '2026-08-25T11:55:00.000Z',
+    expiresAt: '2026-08-25T13:00:00.000Z',
+  }, Date.parse('2026-08-25T12:00:00.000Z'));
 }
 
 describe('project-environment-list', () => {
@@ -187,5 +211,150 @@ describe('project-environment-list', () => {
     expect(calls).toBe(1);
     expect(message).toBe('Error: Project environment request transport failed; no remote error details were retained');
     expect(message).not.toContain(fixtureSecret);
+  });
+});
+
+describe('project environment mutation plans', () => {
+  test('registers set and unset planners as local-only commands', () => {
+    const commands = new Map(projectEnvironmentCommandDefinitions.map(command => [command.name, command]));
+    expect(commands.get('project-environment-plan-set')?.transport).toBe('local');
+    expect(commands.get('project-environment-plan-unset')?.transport).toBe('local');
+    expect(commands.has('project-environment-apply')).toBe(false);
+  });
+
+  test('requires an explicit stable operation identity', () => {
+    expect(validatedEnvironmentPlanOperationId('operator.env:set-001')).toBe('operator.env:set-001');
+    for (const invalid of [undefined, '', 'has whitespace', `x${'a'.repeat(128)}`]) {
+      expect(() => validatedEnvironmentPlanOperationId(invalid)).toThrow('client-operation-id');
+    }
+  });
+
+  test('builds an exact policy-bound set plan with no request body or network action', () => {
+    const output = buildProjectEnvironmentMutationPlan('set', {
+      projectId: 'prj_example',
+      key: 'SERVICE_ENDPOINT',
+      operationId: 'operator-env-set-001',
+    }, environmentPolicy('project.environment.set'), new Date('2026-08-25T12:00:00.000Z'));
+    expect(output).toEqual({
+      plannedAt: '2026-08-25T12:00:00.000Z',
+      operation: 'project-environment-plan-set',
+      clientOperationId: 'operator-env-set-001',
+      target: { projectId: 'prj_example', key: 'SERVICE_ENDPOINT' },
+      request: {
+        method: 'PUT',
+        path: '/api/projects/prj_example/env-vars/SERVICE_ENDPOINT',
+        bodyIncluded: false,
+      },
+      capability: {
+        id: 'project.environment.set',
+        risk: 'W2',
+        remoteStatus: 'blocked',
+        authentication: 'unverified',
+      },
+      policyPrerequisite: {
+        structurallyAuthorized: true,
+        origin: 'https://api.hoplite.sh',
+        expiresAt: '2026-08-25T13:00:00.000Z',
+        ownerBinding: 'deferred-until-auth-compatible-apply',
+      },
+      apply: {
+        available: false,
+        networkRequests: 0,
+        reasonCode: 'remote-authentication-and-metadata-readback-unverified',
+        inputChannel: 'bounded-stdin-required-if-apply-is-added',
+      },
+    });
+  });
+
+  test('builds an exact unset plan and requires the matching policy capability', () => {
+    const now = new Date('2026-08-25T12:00:00.000Z');
+    const output = buildProjectEnvironmentMutationPlan('unset', {
+      projectId: 'prj_example',
+      key: 'LEGACY_ENTRY',
+      operationId: 'operator-env-unset-001',
+    }, environmentPolicy('project.environment.unset'), now);
+    expect(output.request).toEqual({
+      method: 'DELETE',
+      path: '/api/projects/prj_example/env-vars/LEGACY_ENTRY',
+      bodyIncluded: false,
+    });
+    expect(output.apply).toEqual({
+      available: false,
+      networkRequests: 0,
+      reasonCode: 'remote-authentication-and-metadata-readback-unverified',
+      inputChannel: 'none',
+    });
+    expect(() => buildProjectEnvironmentMutationPlan('unset', {
+      projectId: 'prj_example',
+      key: 'LEGACY_ENTRY',
+      operationId: 'operator-env-unset-001',
+    }, environmentPolicy('project.environment.set'), now)).toThrow('capability');
+  });
+
+  test('rejects all data-bearing or confirmation flags without reflecting their contents', () => {
+    for (const flagName of ['value', 'body-json', 'body-file', 'confirm']) {
+      const flags = new Map([
+        ['policy', '/unused'],
+        ['client-operation-id', 'operator-env-set-001'],
+        [flagName, 'private-fixture-content'],
+      ]);
+      let message = '';
+      try {
+        planProjectEnvironmentMutation('set', ['prj_example', 'SAFE_KEY'], flags);
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).toBe('Error: Environment plans accept only --policy, --client-operation-id, and --origin');
+      expect(message).not.toContain('private-fixture-content');
+    }
+  });
+
+  test('does not reflect a missing policy path in errors', () => {
+    const privatePathFragment = 'private-fixture-path-content';
+    let message = '';
+    try {
+      planProjectEnvironmentMutation('set', ['prj_example', 'SAFE_KEY'], new Map([
+        ['policy', `/definitely-missing/${privatePathFragment}`],
+        ['client-operation-id', 'operator-env-set-002'],
+      ]));
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toBe('Error: Environment plan policy could not be loaded');
+    expect(message).not.toContain(privatePathFragment);
+  });
+
+  test('loads only an owner-only expiring policy for the local planner', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-env-plan-test-'));
+    const path = join(directory, 'policy.json');
+    try {
+      writeFileSync(path, JSON.stringify({
+        version: 1,
+        owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+        origins: ['https://api.hoplite.sh'],
+        resources: [{
+          kind: 'project',
+          id: 'prj_example',
+          capabilities: ['project.environment.unset'],
+          riskCeiling: 'W2',
+        }],
+        issuedAt: '2026-08-25T11:55:00.000Z',
+        expiresAt: '2026-08-25T13:00:00.000Z',
+      }));
+      chmodSync(path, 0o600);
+      const output = planProjectEnvironmentMutation('unset', ['prj_example', 'OLD_ENTRY'], new Map([
+        ['policy', path],
+        ['client-operation-id', 'operator-env-unset-002'],
+      ]), new Date('2026-08-25T12:00:00.000Z'));
+      expect(output.apply).toMatchObject({ available: false, networkRequests: 0 });
+
+      chmodSync(path, 0o644);
+      expect(() => planProjectEnvironmentMutation('unset', ['prj_example', 'OLD_ENTRY'], new Map([
+        ['policy', path],
+        ['client-operation-id', 'operator-env-unset-003'],
+      ]), new Date('2026-08-25T12:00:00.000Z'))).toThrow('owner-only');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
