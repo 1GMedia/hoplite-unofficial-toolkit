@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "hoplite": "bun packages/cli/src/index.ts",
-    "test": "bun test packages/cli/src/index.test.ts",
+    "test": "bun test packages/cli/src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build packages/cli/src/index.ts --target bun --outdir dist"
   },
