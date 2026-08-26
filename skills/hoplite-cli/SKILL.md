@@ -38,6 +38,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts mcp-endpoint-check \
   --url https://mcp.vendor.dev/mcp
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-mcp-config-check \
+  --file <owner-only-config.json>
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -90,6 +92,23 @@ all underlying OS resolver work. Treat returned addresses as time-specific
 local evidence only. The result intentionally omits the raw URL and pathname.
 Do not call the undocumented auth-analysis or probe POST routes; their CLI
 credential compatibility and server-side network controls remain blocked.
+
+For project MCP changes, validate the config first. Version 1 accepts only
+HTTPS HTTP/SSE, no auth or a bearer environment secret reference, and bounded
+tool scopes. Never add stdio, raw headers, token values, OAuth state, URL
+credentials, or internal/private endpoints to make validation pass. Config,
+policy, and before-state files must be current-user-owned regular files with
+mode `0400` or `0600`.
+
+`project-mcp-plan-add`, `project-mcp-plan-update`, and
+`project-mcp-plan-remove` create local owner-only expiring artifacts only.
+Supply exact account/workspace/origin identity flags matching an owner policy,
+a stable client operation ID, and a new output path. Update/remove additionally
+require a trusted, digest-valid current before-state; do not invent one. Remove
+requires a W3 policy grant. Treat receipt digests as local planning evidence,
+not evidence that Hoplite or an external MCP server changed. There is no remote
+apply command, and agents must not substitute generic `api`, probe,
+auth-analysis, OAuth, or browser writes.
 
 ## Completion evidence
 

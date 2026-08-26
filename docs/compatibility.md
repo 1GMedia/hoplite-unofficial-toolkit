@@ -74,6 +74,82 @@ redirects are revalidated, or whether the remote service prevents DNS rebinding.
 A successful check is therefore not permission or proof that the blocked POST
 routes are safe to call.
 
+## Local MCP configuration and plans
+
+The official [Hoplite MCP integration documentation](https://hoplite.sh/docs/integrations/mcp)
+defines HTTP, SSE, and stdio configurations and says remote URLs may not target
+loopback, link-local, private, or internal hosts. `project-mcp-config-check`
+implements a narrower local policy: version 1 configurations contain exactly
+`name`, `enabled`, `config`, and `toolScope`; `config` contains exactly
+`transport`, `url`, and `auth`.
+
+- `transport` is `http` or `sse`; stdio is rejected.
+- `url` must pass the existing strict HTTPS endpoint policy. Queries,
+  fragments, credentials, internal/special-use hosts, secret-labelled paths,
+  and long secret-like path segments are rejected.
+- `auth` is exactly `{"type":"none"}` or a `bearer` secret reference with
+  `{"source":"environment","name":"UPPERCASE_ENV_NAME"}`. Header maps,
+  OAuth, and embedded token values are rejected.
+- `toolScope` is `all`, or `allow`/`deny` with 1–100 unique bounded tool names.
+
+The config file must be a current-user-owned regular non-symlink file with mode
+`0400` or `0600`, at most 64 KB. Validation performs no DNS or network request.
+Its result includes only fixed transport/auth enums, field/reference/scope
+counts, and the canonical config SHA-256.
+
+The three local planning commands are:
+
+```text
+project-mcp-plan-add <project-id> --config-file <file> <identity-and-policy-flags>
+project-mcp-plan-update <project-id> <server-id> --config-file <file> --before-state <file> <identity-and-policy-flags>
+project-mcp-plan-remove <project-id> <server-id> --before-state <file> <identity-and-policy-flags>
+```
+
+`<identity-and-policy-flags>` means `--policy`, `--account-id`,
+`--workspace-id`, exact `--origin`, stable `--client-operation-id`, and a new
+`--out` path. Add/update require exact W2 grants for `mcp.servers.create` or
+`mcp.servers.update`; remove requires an exact W3 `mcp.servers.delete` grant.
+The resource-policy risk ceiling is enforced from the registry, not supplied by
+the caller.
+
+Update/remove consume an owner-only current before-state file:
+
+```json
+{
+  "version": 1,
+  "kind": "hoplite_project_mcp_before_state",
+  "owner": {
+    "accountId": "usr_example",
+    "workspaceId": "org_example"
+  },
+  "origin": "https://api.hoplite.sh",
+  "resource": {
+    "kind": "project",
+    "id": "proj_example"
+  },
+  "server": {
+    "id": "mcp_server_example"
+  },
+  "observedAt": "2026-08-26T12:00:00.000Z",
+  "configDigest": "<64 lowercase hex characters>",
+  "stateDigest": "<SHA-256 of compact JSON above, excluding stateDigest>"
+}
+```
+
+The observation must be no more than 24 hours old and no more than five minutes
+in the future. The current aggregate MCP list command does not produce this
+artifact or expose full configuration, so an operator must obtain it from a
+trusted current projection/export rather than inventing a digest.
+
+Plan files bind owner, workspace, origin, project, server identity or server
+name digest, fixed capability/risk, client operation ID, policy grant digest
+and expiry, desired config and digest, before-state digest where required, and
+the observed remote method/path. They are created with exclusive create and
+mode `0600`; existing output paths are never overwritten. Receipts omit all raw
+IDs, endpoints, environment names, server names, and tool names. There is no
+apply command: no DNS, Hoplite request, endpoint request, OAuth, auth-analysis,
+probe, POST, PATCH, or DELETE occurs.
+
 ## Compatibility reads
 
 - Thread execution capability.

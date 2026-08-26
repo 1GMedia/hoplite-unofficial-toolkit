@@ -13,6 +13,10 @@ bun run hoplite -- compatibility-status
 bun run hoplite -- compatibility-diff --baseline <snapshot.json>
 bun run hoplite -- resource-policy-check --file <policy.json>
 bun run hoplite -- mcp-endpoint-check --url https://mcp.vendor.dev/mcp
+bun run hoplite -- project-mcp-config-check --file <config.json>
+bun run hoplite -- project-mcp-plan-add <project-id> --config-file <config.json> \
+  --policy <policy.json> --account-id <id> --workspace-id <id> \
+  --origin https://api.hoplite.sh --client-operation-id <id> --out <plan.json>
 ```
 
 These local commands do not authenticate or change Hoplite state.
@@ -27,6 +31,14 @@ At three seconds the CLI kills and detaches the child; this bounds CLI
 observation, not all underlying OS resolver work. Local DNS results are not
 evidence of Hoplite-side redirect, resolution, or DNS-rebinding controls; remote
 auth-analysis and probe remain blocked.
+
+Project MCP config checking and add/update/remove planning are local feature
+commands in `src/project-mcp-plans.ts`. They accept only owner-only regular
+files, HTTPS HTTP/SSE endpoints, no auth or bearer environment references, and
+bounded tool scopes. Update/remove require an owner-only digest-valid current
+before-state file. Output is aggregate/digest-only; arbitrary identities,
+server names, endpoints, environment names, and tool names stay in the local
+files. Plan creation is exclusive mode `0600`; there is no remote apply path.
 
 Feature command modules export typed definitions and are composed by
 `src/command-registry.ts`. New project/workspace feature lanes should add an
