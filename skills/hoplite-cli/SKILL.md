@@ -36,6 +36,7 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-agents-get <project-id>
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -78,6 +79,12 @@ work around its canonical path checks or use it for a settings mutation. Future
 project/workspace writes also require an owner-only expiring resource policy;
 `resource-policy-check --file <policy.json>` validates that local prerequisite
 without authorizing or changing Hoplite state.
+
+`project-agents-plan-set` is planning-only. It validates proposed model,
+reasoning, and speed values against the live model catalog and binds the plan
+to the exact project path plus a digest of the prior state. It never calls
+PATCH. Pass instruction contents only with `--instructions-file` and `--out`;
+the output plan is owner-only and the normal receipt never prints the text.
 
 ## Completion evidence
 
