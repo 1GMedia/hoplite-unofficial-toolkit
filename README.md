@@ -139,6 +139,22 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+Workspace member management has a stricter boundary. The delivered client uses
+Better Auth browser-session methods for members and mutations. Pending
+invitations and domain auto-join also have client routes, but no evidence proves
+that those reads accept the CLI's OAuth or workspace API-key credentials. Use
+the local-only status command to inspect that boundary without authenticating,
+listing people, or making a network request:
+
+```bash
+bun run hoplite -- workspace-members-status
+```
+
+The command reports fixed capability metadata only. It never emits member or
+invitation names, email addresses, or identifiers. Inviting, changing roles,
+removing members, cancelling invitations, and changing domain auto-join remain
+blocked and have no executable CLI commands.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +189,7 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- workspace-members-status
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
