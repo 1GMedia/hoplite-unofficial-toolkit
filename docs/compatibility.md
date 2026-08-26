@@ -46,6 +46,32 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Aggregate-only personal agent-memory inventory; no item array is emitted.
+- Aggregate-only personal skill inventory; no item array is emitted.
+
+## Personal agent context
+
+`personal-memories-list` uses the authenticated-client `GET
+/api/agent-memories` contract. `personal-skills-list` uses `GET
+/api/user/skills`. Neither route appears in the recorded public OpenAPI, and
+OAuth/MCP compatibility was not assumed: successful reads are labeled for the
+current credential, while `401`, `403`, and `404` remain distinct unknown-
+availability outcomes.
+
+Both commands issue one request with no automatic retry and return aggregate
+inventory only. Memory content, skill bodies, raw identifiers, names,
+descriptions, source labels, deterministic digests, per-item lengths, and item
+arrays can never be emitted. Total/presence counts and fixed scope/source enum
+counts are the only row-derived output. The commands accept no output flags and
+do not invent unobserved server pagination. Oversized MCP text is rejected
+before JSON parsing, more than 100 returned rows fail before counting, and
+transport failures return a constant secret-free result.
+
+The authenticated client also contains personal-context write call shapes, but
+the CLI does not register create, update, delete, plan, or apply commands.
+Non-browser authentication, server bounds, idempotency, role/tenant behavior,
+readback, and deletion semantics remain unverified. See
+[`personal-agent-context.md`](personal-agent-context.md).
 
 ## Guarded compatibility actions
 
