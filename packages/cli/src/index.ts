@@ -17,6 +17,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { redactSecrets, redactText } from './output-safety';
+import { projectSettingsCommandDefinitions } from './project-settings-commands';
+
+export { redactSecrets, redactText } from './output-safety';
 
 type JsonObject = Record<string, unknown>;
 
@@ -84,7 +88,10 @@ const THREAD_ACTION_COMMANDS = new Set([
   'thread-auto-title',
 ]);
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
-const FEATURE_COMMANDS = createCommandRegistry([foundationCommandDefinitions]);
+const FEATURE_COMMANDS = createCommandRegistry([
+  foundationCommandDefinitions,
+  projectSettingsCommandDefinitions,
+]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? 'help';
@@ -115,25 +122,6 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   }
 
   return { command, positionals, flags };
-}
-
-export function redactText(input: string): string {
-  return input
-    .replace(
-      /((?:access|refresh)[_-]?token|password|authorization|api[_-]?key|secret|login[_-]?url)\s*[:=]\s*["']?[^\s"',}\]]+/gi,
-      '$1=[redacted]',
-    )
-    .replace(/https?:\/\/[^\s)\]}>]+/gi, '[url]')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function redactSecrets(input: string, secrets: readonly string[] = []): string {
-  let output = input;
-  for (const secret of secrets) {
-    if (secret.length >= 8) output = output.split(secret).join('[redacted]');
-  }
-  return redactText(output);
 }
 
 function redactOAuthTokens(input: string): string {

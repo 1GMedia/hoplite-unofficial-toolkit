@@ -139,6 +139,35 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Read and resolve project settings
+
+Read a bounded projection of the public project contract, or resolve its
+setup, run, and archive command overrides against the repository compatibility
+settings:
+
+```bash
+bun run hoplite -- project-settings-get <project-id>
+bun run hoplite -- project-settings-resolve <project-id>
+```
+
+Commands and project instructions are omitted by default. Request them only
+when their contents are needed; the CLI redacts credential-shaped text and
+bounds every returned value:
+
+```bash
+bun run hoplite -- project-settings-get <project-id> \
+  --show-commands \
+  --include-instructions
+bun run hoplite -- project-settings-resolve <project-id> --show-commands
+```
+
+`project-settings-get` uses the public/OpenAPI project read. The
+`/api/projects/:id/repo-settings` route used by `project-settings-resolve` was
+observed in the authenticated web client, but its OAuth/MCP credential support
+has not been verified live. A `401`, `403`, or `404` therefore reports the
+current credential result without claiming that the web product lacks the
+feature. The resolver does not infer effective preview-port precedence.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -169,6 +198,8 @@ bun run hoplite -- status
 bun run hoplite -- inspect <thread-id>
 bun run hoplite -- repositories
 bun run hoplite -- branches <repository-id>
+bun run hoplite -- project-settings-get <project-id>
+bun run hoplite -- project-settings-resolve <project-id>
 bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>

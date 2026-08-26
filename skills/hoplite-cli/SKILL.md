@@ -34,6 +34,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-settings-get <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-settings-resolve <project-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
@@ -50,6 +52,20 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Project settings reads omit shell commands and instructions by default. Add
+`--show-commands` only when command text is necessary, and add
+`--include-instructions` only when project instructions are necessary. Both
+surfaces remain redacted and bounded. `project-settings-resolve` combines
+non-null project command overrides with enabled repository commands while
+preserving an explicitly disabled repository command.
+
+The project read is public/OpenAPI evidence. Repository resolution uses the
+authenticated-client compatibility route
+`/api/projects/:id/repo-settings`; OAuth/MCP support for that route remains
+unverified live. Treat `401`, `403`, and `404` as results for the current
+credential and principal, not proof that the browser feature is unavailable.
+Do not infer effective preview-port precedence from this command.
 
 ## Mutations
 
