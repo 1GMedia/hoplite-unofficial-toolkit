@@ -139,6 +139,36 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Inspect usage and billing without opening payment surfaces
+
+Read fixed-window aggregate usage and tightly projected workspace billing
+status. These commands validate the full evidenced response contract but omit
+customer, subscription, policy, subject, grant, and invoice identifiers;
+provider/model/user details; grant sources and descriptions; invoice amounts;
+provider timestamps; and all invoice, checkout, portal, and payment URLs:
+
+```bash
+bun run hoplite -- usage-summary-get --days 30
+bun run hoplite -- billing-budgets-summary
+bun run hoplite -- billing-grants-summary
+bun run hoplite -- billing-summary-get
+bun run hoplite -- billing-plan-get
+bun run hoplite -- billing-subscription-status
+```
+
+`usage-summary-get` accepts only the exact strings `7`, `30`, or `90`; numeric
+variants such as `07` or `30.0` are rejected. Provider timestamps are used only
+to construct or validate the response contract and are never emitted. Grant
+reads always request at most ten rows. These compatibility reads perform one
+GET with a 20-second total timeout and never retry. Credential, subscription,
+role, absence, deployment, transport, and schema-drift outcomes remain distinct.
+Subscription `active` and latest-invoice `open` are the only status strings
+projected from the pinned client evidence; all other status strings become the
+fixed value `unknown`.
+Billing budget/plan changes, checkout, trial activation, subscription preview
+or confirmation, cancellation, reactivation, top-up, and portal handoff are
+registry-only blocked capabilities and have no executable commands.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +203,10 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- usage-summary-get --days 30
+bun run hoplite -- billing-summary-get
+bun run hoplite -- billing-plan-get
+bun run hoplite -- billing-subscription-status
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

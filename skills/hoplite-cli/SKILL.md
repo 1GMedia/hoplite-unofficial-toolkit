@@ -36,6 +36,12 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts usage-summary-get --days 30
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts billing-budgets-summary
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts billing-grants-summary
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts billing-summary-get
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts billing-plan-get
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts billing-subscription-status
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +56,23 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Usage and billing reads are authenticated-client compatibility surfaces, not
+public OpenAPI promises. `usage-summary-get` accepts only the exact strings
+`--days 7`, `30`, or `90`; numeric variants such as `07` or `30.0` are rejected
+before OAuth is read. All other billing commands accept no flags or
+positionals. The commands emit only aggregate usage, policy/grant counts, safe
+credit aggregates, plan configuration, and redacted entitlement/subscription
+status. They intentionally
+omit customer, subscription, invoice, policy, subject, and grant identifiers;
+provider/model/user details; descriptions and sources; invoice amounts; and all
+provider timestamps and invoice/payment URLs. Treat `unsupported_credential`,
+`subscription_required`, `role_denied`, `absent_or_unavailable`,
+`deployment_unavailable`, `request_failed`, and `schema_drift` as distinct
+results and do not retry automatically.
+Only the evidenced subscription status `active` and latest-invoice status
+`open` may be emitted. Any other provider status is returned as `unknown`; do
+not infer or print the original value.
 
 ## Mutations
 
@@ -70,8 +93,14 @@ requires an explicit idempotency key. Do not retry a mutation with a different
 operation ID when the first result is ambiguous.
 
 Do not guess undocumented routes or payloads. Archive/update, delete,
-checkpoint restore, PR mutations, terminal/log access, attachments, billing,
-and workspace recovery remain outside the dedicated command surface.
+checkpoint restore, PR mutations, terminal/log access, attachments, billing
+writes or provider handoffs, and workspace recovery remain outside the
+dedicated command surface.
+
+Budget/plan changes, checkout, trial activation, subscription preview or hosted
+confirmation, cancellation, reactivation, top-up, and portal navigation remain
+blocked metadata only. Never open a returned billing URL or attempt to recreate
+one through the generic API command.
 
 The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
 work around its canonical path checks or use it for a settings mutation. Future
