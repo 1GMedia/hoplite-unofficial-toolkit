@@ -8,6 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
 import {
+  checkMcpEndpoint,
+  isGlobalIpAddress,
+  mcpEndpointPolicyCommandDefinitions,
+  validateMcpEndpointUrl,
+} from './mcp-endpoint-policy';
+import {
   apiKeySummary,
   authSummary,
   buildReadApiRequest,
@@ -62,7 +68,10 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...mcpEndpointPolicyCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
@@ -404,6 +413,216 @@ describe('hoplite-cli', () => {
     const status = compatibilityStatus(snapshot);
     expect(status.capabilityCount).toBe(snapshot.capabilities.length);
     expect(JSON.stringify(status)).not.toMatch(/token|cookie|authorization/i);
+  });
+
+  test('classifies MCP auth analysis and probe as blocked external-contact actions', () => {
+    const capabilities = settingsCapabilitySnapshot(new Date('2026-08-25T12:00:00.000Z')).capabilities;
+    for (const id of ['mcp.auth.analyze', 'mcp.server.probe']) {
+      const capability = capabilities.find(entry => entry.id === id);
+      expect(capability?.risk).toBe('W2');
+      expect(capability?.status).toBe('blocked');
+      expect(capability?.notes).toContain('Hoplite-side DNS');
+    }
+  });
+
+  test('reports a strict public HTTPS MCP endpoint without echoing its path', async () => {
+    let resolverCalls = 0;
+    const secretPath = 'access_token=fixture-path-secret';
+    const result = await checkMcpEndpoint(`https://MCP.vendor.dev:443/mcp/${secretPath}`, {
+      resolver: async () => {
+        resolverCalls += 1;
+        return [{ address: '203.0.114.10', family: 4 }];
+      },
+    });
+    expect(resolverCalls).toBe(0);
+    expect(result.endpoint).toEqual({
+      origin: 'https://mcp.vendor.dev',
+      hostname: 'mcp.vendor.dev',
+      port: 443,
+      pathConfigured: true,
+    });
+    expect(JSON.stringify(result)).not.toContain(secretPath);
+    expect(JSON.stringify(result)).not.toContain('canonicalUrl');
+    expect(JSON.stringify(result)).not.toContain('pathname');
+    expect(result.networkObservation).toEqual({
+      kind: 'none',
+      limitation: 'Hostname syntax was checked without DNS resolution.',
+    });
+    expect(result.hopliteRequestSent).toBe(false);
+    expect(result.targetHttpRequestSent).toBe(false);
+  });
+
+  test('rejects ambiguous, internal, and non-HTTPS MCP endpoint URLs', () => {
+    const invalid = [
+      'http://mcp.vendor.dev/mcp',
+      'https://user:password@mcp.vendor.dev/mcp',
+      'https://mcp.vendor.dev/mcp?token=fixture',
+      'https://mcp.vendor.dev/mcp#fragment',
+      'https://mcp.vendor.dev\\@127.0.0.1/mcp',
+      'https://mcp.vendor.dev/%2fadmin',
+      'https://mcp.vendor.dev/%5cadmin',
+      'https://mcp.vendor.dev/%252fadmin',
+      'https://mcp.vendor.dev/%2e%2e/admin',
+      'https://mcp.vendor.dev/%00',
+      'https://127.0.0.1/mcp',
+      'https://[::1]/mcp',
+      'https://2130706433/mcp',
+      'https://singlelabel/mcp',
+      'https://mcp.vendor.dev./mcp',
+      'https://metadata.google.internal/mcp',
+      'https://service.cluster.local/mcp',
+      'https://mcp.example/mcp',
+      'https://service.arpa/mcp',
+      'https://example.com/mcp',
+      'https://mcp.example.com/mcp',
+      'https://example.net/mcp',
+      'https://mcp.example.net/mcp',
+      'https://example.org/mcp',
+      'https://mcp.example.org/mcp',
+      `https://${'a'.repeat(64)}.vendor.dev/mcp`,
+      `https://mcp.vendor.dev/${'a'.repeat(2_100)}`,
+    ];
+    for (const value of invalid) expect(() => validateMcpEndpointUrl(value)).toThrow();
+  });
+
+  test('distinguishes ordinary public IP addresses from special-purpose ranges', () => {
+    const publicMatrix = [
+      { address: '1.1.1.1', purpose: 'public IPv4' },
+      { address: '8.8.8.8', purpose: 'public IPv4' },
+      { address: '2606:4700:4700::1111', purpose: 'public IPv6' },
+      { address: '2001:4860:4860::8888', purpose: 'public IPv6' },
+    ];
+    for (const entry of publicMatrix) {
+      expect({ ...entry, global: isGlobalIpAddress(entry.address) }).toEqual({ ...entry, global: true });
+    }
+
+    const specialPurposeMatrix = [
+      { address: '0.0.0.0', purpose: 'current network' },
+      { address: '10.0.0.1', purpose: 'private use' },
+      { address: '100.64.0.1', purpose: 'shared address space' },
+      { address: '127.0.0.1', purpose: 'loopback' },
+      { address: '169.254.169.254', purpose: 'link local' },
+      { address: '172.16.0.1', purpose: 'private use' },
+      { address: '192.0.0.9', purpose: 'protocol anycast' },
+      { address: '192.0.2.1', purpose: 'documentation TEST-NET-1' },
+      { address: '192.31.196.1', purpose: 'AS112-v4' },
+      { address: '192.52.193.1', purpose: 'automatic multicast tunneling' },
+      { address: '192.88.99.2', purpose: '6a44 relay anycast' },
+      { address: '192.168.1.1', purpose: 'private use' },
+      { address: '192.175.48.1', purpose: 'direct delegation AS112 service' },
+      { address: '198.18.0.1', purpose: 'benchmarking' },
+      { address: '198.51.100.1', purpose: 'documentation TEST-NET-2' },
+      { address: '203.0.113.1', purpose: 'documentation TEST-NET-3' },
+      { address: '224.0.0.1', purpose: 'multicast' },
+      { address: '255.255.255.255', purpose: 'limited broadcast' },
+      { address: '::', purpose: 'unspecified' },
+      { address: '::1', purpose: 'loopback' },
+      { address: '::ffff:127.0.0.1', purpose: 'IPv4 mapped' },
+      { address: '64:ff9b::127.0.0.1', purpose: 'IPv4 translation' },
+      { address: '64:ff9b:1::1', purpose: 'local-use IPv4 translation' },
+      { address: '100::1', purpose: 'discard only' },
+      { address: '100:0:0:1::1', purpose: 'dummy IPv6' },
+      { address: '2001:1::1', purpose: 'PCP anycast' },
+      { address: '2001:1::2', purpose: 'TURN anycast' },
+      { address: '2001:1::3', purpose: 'DNS-SD anycast' },
+      { address: '2001:2::1', purpose: 'benchmarking' },
+      { address: '2001:3::1', purpose: 'automatic multicast tunneling' },
+      { address: '2001:4:112::1', purpose: 'AS112-v6' },
+      { address: '2001:10::1', purpose: 'deprecated ORCHID' },
+      { address: '2001:20::1', purpose: 'ORCHIDv2' },
+      { address: '2001:30::1', purpose: 'drone remote ID entity tags' },
+      { address: '2001:db8::1', purpose: 'documentation' },
+      { address: '2002:7f00:1::', purpose: '6to4' },
+      { address: '2620:4f:8000::1', purpose: 'direct delegation AS112 service' },
+      { address: '3fff::1', purpose: 'documentation' },
+      { address: '5f00::1', purpose: 'segment routing SIDs' },
+      { address: 'fc00::1', purpose: 'unique local' },
+      { address: 'fe80::1', purpose: 'link local' },
+      { address: 'ff02::1', purpose: 'multicast' },
+    ];
+    for (const entry of specialPurposeMatrix) {
+      expect({ ...entry, global: isGlobalIpAddress(entry.address) }).toEqual({ ...entry, global: false });
+    }
+  });
+
+  test('performs one bounded DNS-only observation and rejects special-purpose answers', async () => {
+    let resolverCalls = 0;
+    const result = await checkMcpEndpoint('https://mcp.vendor.dev/mcp', {
+      resolve: true,
+      resolver: async hostname => {
+        resolverCalls += 1;
+        expect(hostname).toBe('mcp.vendor.dev');
+        return [
+          { address: '2606:4700:4700::1111', family: 6 },
+          { address: '1.1.1.1', family: 4 },
+          { address: '1.1.1.1', family: 4 },
+        ];
+      },
+    });
+    expect(resolverCalls).toBe(1);
+    expect(result.networkObservation).toMatchObject({
+      kind: 'local_dns_only',
+      answerCount: 2,
+      observationDeadlineMs: 3_000,
+    });
+    expect(JSON.stringify(result.networkObservation)).toContain('do not prove Hoplite-side');
+    expect(JSON.stringify(result.networkObservation)).toContain('isolated lookup child');
+    expect(result.targetHttpRequestSent).toBe(false);
+
+    await expect(checkMcpEndpoint('https://mcp.vendor.dev/mcp', {
+      resolve: true,
+      resolver: async () => [
+        { address: '1.1.1.1', family: 4 },
+        { address: '127.0.0.1', family: 4 },
+      ],
+    })).rejects.toThrow('non-public or special-purpose');
+  });
+
+  test('aborts a DNS observation at its deadline and does not retry', async () => {
+    let timeoutCalls = 0;
+    let abortObserved = false;
+    await expect(checkMcpEndpoint('https://mcp.vendor.dev/mcp', {
+      resolve: true,
+      dnsObservationDeadlineMs: 5,
+      resolver: async (_hostname, { signal }) => {
+        timeoutCalls += 1;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            abortObserved = true;
+            reject(signal.reason);
+          }, { once: true });
+        });
+      },
+    })).rejects.toThrow('DNS resolution exceeded');
+    expect(timeoutCalls).toBe(1);
+    expect(abortObserved).toBe(true);
+  });
+
+  test('rejects an oversized DNS result set without retrying', async () => {
+    let countCalls = 0;
+    await expect(checkMcpEndpoint('https://mcp.vendor.dev/mcp', {
+      resolve: true,
+      resolver: async () => {
+        countCalls += 1;
+        return Array.from({ length: 17 }, (_value, index) => ({
+          address: `8.8.8.${index + 1}`,
+          family: 4 as const,
+        }));
+      },
+    })).rejects.toThrow('more than 16');
+    expect(countCalls).toBe(1);
+  });
+
+  test('exposes MCP endpoint policy through a local-only CLI command', async () => {
+    const secretPath = 'secret=fixture-cli-path-secret';
+    const result = await run(['mcp-endpoint-check', '--url', `https://mcp.vendor.dev/mcp/${secretPath}`]);
+    expect(result.ok).toBe(true);
+    expect(result.hopliteRequestSent).toBe(false);
+    expect(result.targetHttpRequestSent).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(secretPath);
+    expect(JSON.stringify(result)).not.toContain('pathname');
+    await expect(run(['mcp-endpoint-check', 'https://mcp.vendor.dev/mcp'])).rejects.toThrow('--url');
+    await expect(run(['mcp-endpoint-check', '--url', 'https://mcp.vendor.dev/mcp', '--unknown'])).rejects.toThrow('does not support');
   });
 
   test('diffs compatibility snapshots by identity and capability contract', () => {

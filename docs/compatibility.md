@@ -40,6 +40,40 @@ only identity changes and added, removed, or modified capability IDs. If a
 status snapshot was created with `--area`, the filter is stored and reused by
 the diff. Programmatic comparisons with mismatched filters fail closed.
 
+## MCP endpoint policy
+
+The authenticated client evidences `POST /api/mcp/auth-analysis` and
+`POST /api/mcp/probe`, each with a `{url}` body. Both can cause Hoplite to
+contact a caller-selected external origin, so both are W2 external-contact
+operations. Their OAuth/API-key compatibility and Hoplite-side DNS, redirect,
+and rebinding controls are not verified; the registry therefore marks them
+blocked.
+
+`mcp-endpoint-check --url <https-url>` is a separate local-only command. It
+enforces a 2,048-byte HTTPS URL policy and rejects userinfo, query strings,
+fragments, control characters, backslashes, encoded separators, double
+encoding, IP literals, dotless or trailing-dot names, invalid DNS labels,
+`.arpa`, the reserved example domains and their subdomains, and other internal
+or special-use suffixes. Its result omits the raw canonical URL and pathname so
+secret-bearing path content is never echoed. It sends no request to Hoplite or
+the target.
+
+`--resolve` explicitly opts into one local OS-resolver observation. At most 16
+combined IPv4/IPv6 answers are accepted and every answer must be ordinary public
+unicast. The policy conservatively rejects all relevant entries in the
+[IANA IPv4 special-purpose registry](https://www.iana.org/assignments/iana-ipv4-special-registry/)
+and [IANA IPv6 special-purpose registry](https://www.iana.org/assignments/iana-ipv6-special-registry/),
+including protocol/service anycasts that IANA marks globally reachable, plus
+multicast. Examples include the AS112, AMT, PCP/TURN, ORCHID, 6to4, and IPv4/IPv6
+documentation ranges such as `3fff::/20`. The default lookup runs in an isolated
+child process. At the three-second observation deadline, the CLI kills and
+detaches that child so the lookup cannot keep the CLI alive. This bounds the
+CLI's observation, not all underlying OS resolver work, and there are no
+retries. The result cannot prove which address Hoplite will resolve, whether
+redirects are revalidated, or whether the remote service prevents DNS rebinding.
+A successful check is therefore not permission or proof that the blocked POST
+routes are safe to call.
+
 ## Compatibility reads
 
 - Thread execution capability.
