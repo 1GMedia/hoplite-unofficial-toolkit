@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { projectAutomationCommandDefinitions } from './project-automation-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,11 +63,37 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...projectAutomationCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
     for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
+  test('rejects invalid project automation arguments before reading OAuth', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-automation-preflight-test-'));
+    const previousPath = process.env.HOPLITE_OAUTH_PATH;
+    process.env.HOPLITE_OAUTH_PATH = join(directory, 'missing-oauth.json');
+    try {
+      await expect(run(['project-automations-list', '../private']))
+        .rejects.toThrow('resource id');
+      await expect(run(['project-automations-status', 'prj_fixture1', '--details']))
+        .rejects.toThrow('Unsupported flag');
+      await expect(run([
+        'project-automation-runs-list',
+        'prj_fixture1',
+        'aut_fixture1',
+        '--limit',
+        '101',
+      ])).rejects.toThrow('limit');
+    } finally {
+      if (previousPath === undefined) delete process.env.HOPLITE_OAUTH_PATH;
+      else process.env.HOPLITE_OAUTH_PATH = previousPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test('parses positional values and both flag forms', () => {

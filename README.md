@@ -139,6 +139,25 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Inspect project automations without exposing their instructions
+
+Read bounded automation metadata, one locally filtered automation detail,
+aggregate health, or execution receipts. These commands omit prompts, run
+titles, webhook credentials, payload summaries, external destinations, dedupe
+keys, and private error text:
+
+```bash
+bun run hoplite -- project-automations-list <project-id>
+bun run hoplite -- project-automation-get <project-id> <automation-id>
+bun run hoplite -- project-automations-status <project-id>
+bun run hoplite -- project-automation-runs-list <project-id> <automation-id> --limit 25
+```
+
+Each command performs one exact `GET` with no retry. Automation creation,
+updates, enable/disable, run-now, deletion, and webhook-credential access remain
+blocked. Their client contracts are compatibility metadata, not executable CLI
+permissions.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +192,8 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- project-automations-list <project-id>
+bun run hoplite -- project-automations-status <project-id>
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

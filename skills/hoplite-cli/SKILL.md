@@ -36,6 +36,9 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-automations-list <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-automations-status <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-automation-runs-list <project-id> <automation-id> --limit 25
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +53,13 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Automation reads are compatibility commands, not a write surface. Use
+`project-automation-get <project-id> <automation-id>` for one safe local
+projection from the bounded list. The commands intentionally omit automation
+prompts and titles, webhook credentials, payload/destination data, dedupe keys,
+spend values, and private execution errors. Do not replace them with the generic
+`api` command to retrieve hidden automation or credential fields.
 
 ## Mutations
 
@@ -72,6 +82,10 @@ operation ID when the first result is ambiguous.
 Do not guess undocumented routes or payloads. Archive/update, delete,
 checkpoint restore, PR mutations, terminal/log access, attachments, billing,
 and workspace recovery remain outside the dedicated command surface.
+
+Automation create/update/enable/disable/run-now/delete and webhook credential
+access are also blocked. A compatibility-registry entry records evidence only;
+it is never permission to call one of those routes.
 
 The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
 work around its canonical path checks or use it for a settings mutation. Future

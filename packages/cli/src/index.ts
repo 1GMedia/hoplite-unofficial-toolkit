@@ -17,6 +17,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { projectAutomationCommandDefinitions } from './project-automation-commands';
 
 type JsonObject = Record<string, unknown>;
 
@@ -84,7 +85,10 @@ const THREAD_ACTION_COMMANDS = new Set([
   'thread-auto-title',
 ]);
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
-const FEATURE_COMMANDS = createCommandRegistry([foundationCommandDefinitions]);
+const FEATURE_COMMANDS = createCommandRegistry([
+  foundationCommandDefinitions,
+  projectAutomationCommandDefinitions,
+]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? 'help';
@@ -1105,13 +1109,14 @@ export async function run(argv: string[]): Promise<JsonObject> {
   if (parsed.command === 'api-auth') return apiKeySummary();
 
   const featureCommand = FEATURE_COMMANDS.get(parsed.command);
+  const featureContext = { positionals: parsed.positionals, flags: parsed.flags };
+  await featureCommand?.validate?.(featureContext);
   if (featureCommand?.transport === 'local') {
-    return featureCommand.run({ positionals: parsed.positionals, flags: parsed.flags });
+    return featureCommand.run(featureContext);
   }
   if (featureCommand?.transport === 'mcp') {
     return withClient(async client => featureCommand.run({
-      positionals: parsed.positionals,
-      flags: parsed.flags,
+      ...featureContext,
       client,
     }));
   }
