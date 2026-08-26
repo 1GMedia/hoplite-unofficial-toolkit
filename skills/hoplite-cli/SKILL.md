@@ -36,6 +36,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts mcp-endpoint-check \
+  --url https://mcp.vendor.dev/mcp
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -78,6 +80,16 @@ work around its canonical path checks or use it for a settings mutation. Future
 project/workspace writes also require an owner-only expiring resource policy;
 `resource-policy-check --file <policy.json>` validates that local prerequisite
 without authorizing or changing Hoplite state.
+
+Before proposing a remote project MCP server, use `mcp-endpoint-check --url`
+for the local syntactic policy. Use `--resolve` only when the operator wants a
+DNS lookup: it performs one local resolver observation in an isolated child, no
+HTTP request, and no Hoplite call. The three-second deadline kills and detaches
+that child so it cannot keep the CLI alive; it does not prove cancellation of
+all underlying OS resolver work. Treat returned addresses as time-specific
+local evidence only. The result intentionally omits the raw URL and pathname.
+Do not call the undocumented auth-analysis or probe POST routes; their CLI
+credential compatibility and server-side network controls remain blocked.
 
 ## Completion evidence
 

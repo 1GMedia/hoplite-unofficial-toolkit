@@ -139,6 +139,40 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Check an MCP endpoint locally
+
+Validate a prospective remote MCP URL without authenticating to Hoplite or
+contacting the endpoint:
+
+```bash
+bun run hoplite -- mcp-endpoint-check --url https://mcp.vendor.dev/mcp
+```
+
+The command accepts only a bounded, unambiguous HTTPS URL with a public DNS
+name. It rejects credentials, queries, fragments, IP literals, `.arpa`, the
+reserved example domains (`example.com`, `example.net`, and `example.org`) and
+their subdomains, other internal/special-use suffixes, encoded separators,
+double encoding, and ambiguous forms. Result output reports only the safe origin,
+hostname, port, and whether a path was configured; it never echoes the raw URL
+or pathname. Add `--resolve` only when a local DNS lookup is useful:
+
+```bash
+bun run hoplite -- mcp-endpoint-check \
+  --url https://mcp.vendor.dev/mcp \
+  --resolve
+```
+
+`--resolve` performs one local OS-resolver lookup in an isolated child process
+and fails unless every returned IPv4 or IPv6 address is ordinary public unicast.
+It conservatively rejects the IANA special-purpose registries, including
+reachable protocol anycasts and reserved documentation ranges. The CLI stops
+observing after three seconds, then kills and detaches that child so it cannot
+keep the CLI alive; this does not prove all underlying OS resolver work was
+cancelled. The command does not send HTTP, call Hoplite, follow redirects, prove
+what Hoplite resolves, or protect a later server-side request from DNS rebinding.
+Hoplite's undocumented auth-analysis and probe routes remain blocked until
+their CLI authentication and server-side network controls are verified.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +207,7 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- mcp-endpoint-check --url https://mcp.vendor.dev/mcp
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.
