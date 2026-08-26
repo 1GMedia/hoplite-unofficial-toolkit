@@ -40,6 +40,13 @@ only identity changes and added, removed, or modified capability IDs. If a
 status snapshot was created with `--area`, the filter is stored and reused by
 the diff. Programmatic comparisons with mismatched filters fail closed.
 
+Project environment set/unset are `blocked` even though their exact paths and
+browser payload/receipt shapes were observed. The current CLI credential was
+not proven compatible with those routes, and a successful set still lacks a
+proven metadata-only readback. `project-environment-plan-set` and
+`project-environment-plan-unset` are local policy checks, not remote capability
+implementations.
+
 ## Compatibility reads
 
 - Thread execution capability.
@@ -105,6 +112,12 @@ match the authenticated owner/workspace, target resource, requested capability,
 origin, and risk ceiling at execution time. The requested action's risk is
 always derived from the compatibility registry; callers cannot supply or
 downgrade it.
+
+The environment planners consume this same owner-only policy and require the
+exact project, key, stable operation ID, origin, capability, and
+registry-derived `W2` risk. Their owner binding is explicitly deferred because
+no compatible authenticated apply exists. They make zero network requests,
+accept no environment data, and produce no request body.
 
 ## Intentionally excluded
 

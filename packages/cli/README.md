@@ -35,6 +35,24 @@ values. It fails closed if the server returns a value, credential,
 secret-bearing field, unknown field, more than 500 entries, or an incompatible
 schema. Its local implementation is
 available, but authentication compatibility for this client-derived route
-remains unverified. Environment set/unset operations are intentionally absent
-until a dedicated secret-input subsystem and approved authentication evidence
-exist.
+remains unverified. Environment set/unset apply operations are intentionally
+absent until a dedicated bounded-stdin subsystem, approved authentication
+evidence, and metadata-only readback proof exist.
+
+Policy-bound local plans are available:
+
+```bash
+bun run hoplite -- project-environment-plan-set <project-id> <KEY> \
+  --policy <owner-only-policy.json> \
+  --client-operation-id <stable-id>
+bun run hoplite -- project-environment-plan-unset <project-id> <KEY> \
+  --policy <owner-only-policy.json> \
+  --client-operation-id <stable-id>
+```
+
+Both commands are local-only and make zero network requests. The policy must
+grant the exact project and matching `project.environment.set` or
+`project.environment.unset` capability at risk ceiling `W2` or higher. The set
+planner accepts no environment data; unsupported flags, extra positionals, and
+missing operation IDs fail closed. Its output records that future apply would
+require bounded stdin, but it does not read stdin in this release.
