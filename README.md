@@ -139,6 +139,20 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### List project environment metadata
+
+List environment variable names and optional update timestamps for one project
+without exposing values:
+
+```bash
+bun run hoplite -- project-environment-list <project-id>
+```
+
+This client-derived read route has unverified CLI authentication compatibility.
+The command makes one request with no retry, returns only sorted metadata, and
+fails closed if Hoplite returns a value, an unknown field, extra MCP content, or
+an incompatible response. Environment set/unset commands are not included.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +187,7 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- project-environment-list <project-id>
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

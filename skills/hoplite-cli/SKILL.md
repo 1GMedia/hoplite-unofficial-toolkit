@@ -34,12 +34,21 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts project-environment-list <project-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
 do not prove that downstream work actually progressed.
+
+`project-environment-list` is metadata-only: it returns sorted variable names
+and optional update timestamps, never values. Its client-derived route still
+has unverified CLI authentication compatibility. Treat 401, 403, 404, absent
+route, and schema-drift results as distinct evidence, and do not retry. If the
+response contains values, unknown fields, or extra MCP content, the command
+fails closed. Do not substitute generic API access or browser inspection to
+recover environment values.
 
 Use `settings-capabilities --area <area>` to distinguish implemented commands
 from authenticated-client contracts that are only discovered or blocked. A
