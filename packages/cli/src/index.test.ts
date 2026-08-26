@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,11 @@ import {
   mcpEndpointPolicyCommandDefinitions,
   validateMcpEndpointUrl,
 } from './mcp-endpoint-policy';
+import {
+  parseProjectMcpBeforeState,
+  parseProjectMcpConfig,
+  projectMcpPlanCommandDefinitions,
+} from './project-mcp-plans';
 import {
   apiKeySummary,
   authSummary,
@@ -71,6 +77,7 @@ describe('hoplite-cli', () => {
     const featureNames = new Set([
       ...foundationCommandDefinitions,
       ...mcpEndpointPolicyCommandDefinitions,
+      ...projectMcpPlanCommandDefinitions,
     ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
@@ -807,5 +814,291 @@ describe('hoplite-cli', () => {
       ...request,
       capability: 'project.delete',
     }, now)).toThrow('risk');
+  });
+});
+
+describe('local project MCP configuration plans', () => {
+  const projectId = 'proj_mcp_fixture';
+  const serverId = 'mcp_server_fixture';
+  const accountId = 'usr_fixture';
+  const workspaceId = 'org_fixture';
+  const origin = 'https://api.hoplite.sh';
+  const clientOperationId = 'mcp-plan-fixture-001';
+  const sha256 = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+  function configFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      version: 1,
+      name: 'Private Docs',
+      enabled: true,
+      config: {
+        transport: 'http',
+        url: 'https://mcp.vendor.dev/mcp',
+        auth: {
+          type: 'bearer',
+          secretRef: { source: 'environment', name: 'PRIVATE_DOCS_TOKEN' },
+        },
+      },
+      toolScope: { mode: 'allow', tools: ['fetch_doc', 'search_docs'] },
+      ...overrides,
+    };
+  }
+
+  function writeOwnerOnly(path: string, value: unknown): void {
+    writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+    chmodSync(path, 0o600);
+  }
+
+  function policyFixture(now = Date.now()): Record<string, unknown> {
+    return {
+      version: 1,
+      owner: { accountId, workspaceId },
+      origins: [origin],
+      resources: [{
+        kind: 'project',
+        id: projectId,
+        capabilities: ['mcp.servers.create', 'mcp.servers.update', 'mcp.servers.delete'],
+        riskCeiling: 'W3',
+      }],
+      issuedAt: new Date(now - 60_000).toISOString(),
+      expiresAt: new Date(now + 60 * 60_000).toISOString(),
+    };
+  }
+
+  function beforeStateFixture(now = Date.now()): Record<string, unknown> {
+    const identity = {
+      version: 1,
+      kind: 'hoplite_project_mcp_before_state',
+      owner: { accountId, workspaceId },
+      origin,
+      resource: { kind: 'project', id: projectId },
+      server: { id: serverId },
+      observedAt: new Date(now - 30_000).toISOString(),
+      configDigest: 'a'.repeat(64),
+    };
+    return { ...identity, stateDigest: sha256(identity) };
+  }
+
+  function planFlags(
+    policyPath: string,
+    outPath: string,
+    extra: Array<[string, string]> = [],
+  ): Map<string, string> {
+    return new Map([
+      ['policy', policyPath],
+      ['account-id', accountId],
+      ['workspace-id', workspaceId],
+      ['origin', origin],
+      ['client-operation-id', clientOperationId],
+      ['out', outPath],
+      ...extra,
+    ]);
+  }
+
+  function flagArgs(flags: Map<string, string>): string[] {
+    return [...flags].flatMap(([name, value]) => [`--${name}`, value]);
+  }
+
+  test('parses a narrow HTTP/SSE schema and emits only fixed enums, counts, and a digest', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-mcp-config-'));
+    try {
+      const configPath = join(directory, 'config.json');
+      const config = configFixture();
+      writeOwnerOnly(configPath, config);
+      const parsed = parseProjectMcpConfig(config);
+      expect(parsed.config.transport).toBe('http');
+      expect(parsed.config.auth.type).toBe('bearer');
+      const sse = parseProjectMcpConfig(configFixture({
+        config: { transport: 'sse', url: 'https://events.vendor.dev/sse', auth: { type: 'none' } },
+        toolScope: { mode: 'all' },
+      }));
+      expect(sse.config.transport).toBe('sse');
+      expect(sse.config.auth.type).toBe('none');
+      expect(sse.toolScope).toEqual({ mode: 'all' });
+      const result = await run(['project-mcp-config-check', '--file', configPath]);
+      expect(result).toMatchObject({
+        operation: 'project_mcp_config_check',
+        valid: true,
+        transport: 'http',
+        auth: 'bearer_secret_reference',
+        secretReferenceCount: 1,
+        toolScopeCount: 2,
+        dnsLookups: 0,
+        targetRequests: 0,
+        hopliteRequests: 0,
+        remoteStateChanged: false,
+      });
+      expect(result.configDigest).toMatch(/^[a-f0-9]{64}$/);
+      const output = JSON.stringify(result);
+      for (const forbidden of ['Private Docs', 'mcp.vendor.dev', '/mcp', 'PRIVATE_DOCS_TOKEN', 'fetch_doc', 'search_docs']) {
+        expect(output).not.toContain(forbidden);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects stdio, headers, raw secrets, unsafe endpoints, and ambiguous secret-bearing paths', () => {
+    const invalidConfigs: unknown[] = [
+      configFixture({ config: { transport: 'stdio', command: 'npx', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://mcp.vendor.dev/mcp', headers: { Authorization: 'Bearer fixture' }, auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://mcp.vendor.dev/mcp', auth: { type: 'bearer', token: 'fixture-secret' } } }),
+      configFixture({ config: { transport: 'http', url: 'http://mcp.vendor.dev/mcp', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://user:password@mcp.vendor.dev/mcp', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://127.0.0.1/mcp', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://metadata.google.internal/mcp', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://mcp.vendor.dev/token/abc123', auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: `https://mcp.vendor.dev/mcp/${'a'.repeat(40)}`, auth: { type: 'none' } } }),
+      configFixture({ config: { transport: 'http', url: 'https://mcp.vendor.dev/mcp', auth: { type: 'oauth' } } }),
+    ];
+    for (const value of invalidConfigs) expect(() => parseProjectMcpConfig(value)).toThrow();
+  });
+
+  test('requires owner-only regular config files and refuses symlinks', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-mcp-config-file-'));
+    try {
+      const configPath = join(directory, 'config.json');
+      const linkPath = join(directory, 'config-link.json');
+      writeOwnerOnly(configPath, configFixture());
+      chmodSync(configPath, 0o644);
+      await expect(run(['project-mcp-config-check', '--file', configPath])).rejects.toThrow('owner-only');
+      chmodSync(configPath, 0o600);
+      symlinkSync(configPath, linkPath);
+      await expect(run(['project-mcp-config-check', '--file', linkPath])).rejects.toThrow('non-symlink');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('writes an exclusive owner-only add plan with no network or identifier leakage in the receipt', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-mcp-add-plan-'));
+    try {
+      const configPath = join(directory, 'config.json');
+      const policyPath = join(directory, 'policy.json');
+      const outPath = join(directory, 'plan.json');
+      writeOwnerOnly(configPath, configFixture());
+      writeOwnerOnly(policyPath, policyFixture());
+      const result = await run([
+        'project-mcp-plan-add', projectId, '--config-file', configPath,
+        ...flagArgs(planFlags(policyPath, outPath)),
+      ]);
+      expect(result).toMatchObject({
+        operation: 'project_mcp_plan', action: 'add', capability: 'mcp.servers.create', risk: 'W2',
+        policyAuthorized: true, transport: 'http', auth: 'bearer_secret_reference',
+        planFileWritten: true, planFileMode: '0600', dnsLookups: 0, targetRequests: 0,
+        hopliteRequests: 0, remoteApply: 'blocked', remoteStateChanged: false, retryAllowed: false,
+      });
+      expect(statSync(outPath).mode & 0o777).toBe(0o600);
+      const plan = JSON.parse(readFileSync(outPath, 'utf8')) as Record<string, unknown>;
+      expect(plan).toMatchObject({
+        kind: 'hoplite_project_mcp_plan', action: 'add', owner: { accountId, workspaceId },
+        origin, resource: { kind: 'project', id: projectId }, capability: 'mcp.servers.create',
+        risk: 'W2', clientOperationId,
+        contract: { method: 'POST', remoteApply: 'blocked', networkRequests: 'none' },
+      });
+      const { planDigest, ...planIdentity } = plan;
+      expect(planDigest).toBe(sha256(planIdentity));
+      const output = JSON.stringify(result);
+      for (const forbidden of [projectId, accountId, workspaceId, 'api.hoplite.sh', clientOperationId, 'mcp.vendor.dev', 'PRIVATE_DOCS_TOKEN']) {
+        expect(output).not.toContain(forbidden);
+      }
+      const original = readFileSync(outPath, 'utf8');
+      await expect(run([
+        'project-mcp-plan-add', projectId, '--config-file', configPath,
+        ...flagArgs(planFlags(policyPath, outPath)),
+      ])).rejects.toThrow('without overwriting');
+      expect(readFileSync(outPath, 'utf8')).toBe(original);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('binds update and remove plans to a current, exact before-state digest', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-mcp-change-plan-'));
+    try {
+      const configPath = join(directory, 'config.json');
+      const policyPath = join(directory, 'policy.json');
+      const beforePath = join(directory, 'before.json');
+      writeOwnerOnly(configPath, configFixture({ name: 'Updated Docs' }));
+      writeOwnerOnly(policyPath, policyFixture());
+      const before = beforeStateFixture();
+      writeOwnerOnly(beforePath, before);
+      expect(parseProjectMcpBeforeState(before).stateDigest).toBe(String(before.stateDigest));
+      for (const action of ['update', 'remove'] as const) {
+        const outPath = join(directory, `${action}.json`);
+        const extra: Array<[string, string]> = [['before-state', beforePath]];
+        if (action === 'update') extra.push(['config-file', configPath]);
+        const result = await run([
+          `project-mcp-plan-${action}`, projectId, serverId,
+          ...flagArgs(planFlags(policyPath, outPath, extra)),
+        ]);
+        expect(result).toMatchObject({
+          action,
+          capability: action === 'update' ? 'mcp.servers.update' : 'mcp.servers.delete',
+          risk: action === 'update' ? 'W2' : 'W3',
+          beforeStateDigest: String(before.stateDigest),
+          hopliteRequests: 0,
+          remoteStateChanged: false,
+        });
+        const plan = JSON.parse(readFileSync(outPath, 'utf8')) as Record<string, unknown>;
+        expect(plan).toMatchObject({
+          action, server: { id: serverId },
+          beforeState: { digest: String(before.stateDigest), configDigest: 'a'.repeat(64) },
+        });
+        const output = JSON.stringify(result);
+        for (const forbidden of [projectId, serverId, accountId, workspaceId, 'api.hoplite.sh', clientOperationId]) {
+          expect(output).not.toContain(forbidden);
+        }
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('fails closed on stale, tampered, or mismatched before-state and unauthorized policy identity', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-mcp-invalid-plan-'));
+    try {
+      const configPath = join(directory, 'config.json');
+      const policyPath = join(directory, 'policy.json');
+      const beforePath = join(directory, 'before.json');
+      writeOwnerOnly(configPath, configFixture());
+      writeOwnerOnly(policyPath, policyFixture());
+      const tampered = beforeStateFixture();
+      tampered.stateDigest = 'b'.repeat(64);
+      writeOwnerOnly(beforePath, tampered);
+      await expect(run([
+        'project-mcp-plan-update', projectId, serverId,
+        ...flagArgs(planFlags(policyPath, join(directory, 'bad-plan.json'), [
+          ['before-state', beforePath], ['config-file', configPath],
+        ])),
+      ])).rejects.toThrow('digest does not match');
+
+      const stale = beforeStateFixture(Date.now() - 25 * 60 * 60_000);
+      writeOwnerOnly(beforePath, stale);
+      await expect(run([
+        'project-mcp-plan-remove', projectId, serverId,
+        ...flagArgs(planFlags(policyPath, join(directory, 'stale-plan.json'), [['before-state', beforePath]])),
+      ])).rejects.toThrow('within 24 hours');
+
+      writeOwnerOnly(beforePath, beforeStateFixture());
+      const wrongOwner = planFlags(policyPath, join(directory, 'wrong-owner.json'), [
+        ['before-state', beforePath], ['config-file', configPath],
+      ]);
+      wrongOwner.set('account-id', 'usr_other');
+      await expect(run([
+        'project-mcp-plan-update', projectId, serverId, ...flagArgs(wrongOwner),
+      ])).rejects.toThrow('owner');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test('validates local command invocation before any OAuth/client construction', async () => {
+    await expect(run([
+      'project-mcp-plan-add', projectId, 'unexpected', '--config-file', '/does/not/exist',
+    ])).rejects.toThrow('unexpected positional');
+    await expect(run([
+      'project-mcp-config-check', '--file', '/does/not/exist', '--resolve', 'true',
+    ])).rejects.toThrow('unsupported flags');
   });
 });

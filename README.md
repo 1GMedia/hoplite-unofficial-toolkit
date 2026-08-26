@@ -173,6 +173,80 @@ what Hoplite resolves, or protect a later server-side request from DNS rebinding
 Hoplite's undocumented auth-analysis and probe routes remain blocked until
 their CLI authentication and server-side network controls are verified.
 
+### Validate and plan project MCP configuration locally
+
+The official Hoplite documentation supports HTTP, SSE, and stdio project MCP
+servers. This toolkit's first planning surface is intentionally narrower: it
+accepts HTTPS HTTP/SSE only, with either no auth or a bearer token referenced by
+an environment variable name. It rejects stdio, raw header values, embedded
+credentials, OAuth state, URL credentials, queries, private/loopback/link-local
+or internal targets, and secret-looking URL paths.
+
+Config validation is local and prints only fixed transport/auth enums, counts,
+and a digest—not the server name, URL/host/path, environment name, or tool names:
+
+```bash
+chmod 600 project-mcp-config.json
+bun run hoplite -- project-mcp-config-check --file project-mcp-config.json
+```
+
+The strict config shape is:
+
+```json
+{
+  "version": 1,
+  "name": "Docs search",
+  "enabled": true,
+  "config": {
+    "transport": "http",
+    "url": "https://mcp.vendor.dev/mcp",
+    "auth": {
+      "type": "bearer",
+      "secretRef": {
+        "source": "environment",
+        "name": "DOCS_MCP_TOKEN"
+      }
+    }
+  },
+  "toolScope": {
+    "mode": "allow",
+    "tools": ["search_docs", "fetch_doc"]
+  }
+}
+```
+
+Use `{ "type": "none" }` for unauthenticated servers. Tool scope can be
+`{"mode":"all"}`, or `allow`/`deny` with 1–100 unique tool names.
+
+An add plan also requires the existing short-lived resource policy to grant
+`mcp.servers.create` at W2. Identity flags are matched against that policy and
+are written only into the owner-only plan, never echoed:
+
+```bash
+bun run hoplite -- project-mcp-plan-add <project-id> \
+  --config-file project-mcp-config.json \
+  --policy hoplite-resource-policy.json \
+  --account-id <account-id> \
+  --workspace-id <workspace-id> \
+  --origin https://api.hoplite.sh \
+  --client-operation-id mcp-add-20260826-001 \
+  --out project-mcp-add-plan.json
+```
+
+`project-mcp-plan-update <project-id> <server-id>` additionally requires
+`--config-file` and `--before-state`. `project-mcp-plan-remove <project-id>
+<server-id>` requires `--before-state` and a W3 `mcp.servers.delete` grant.
+Before-state files must be owner-only, at most 24 hours old, digest-valid, and
+match the exact owner, origin, project, and server. Do not invent one: obtain it
+from a trusted current projection/export. See
+[compatibility routes](docs/compatibility.md) for its exact schema.
+
+Plans are created exclusively as mode `0600`, expire with their policy, bind
+the policy grant, operation ID, config digest, and before-state digest where
+required, and never overwrite an existing path. These commands do not perform
+DNS, contact the endpoint, authenticate to Hoplite, call POST/PATCH/DELETE,
+start OAuth, probe, analyze auth, or apply remote state.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -208,6 +282,7 @@ bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
 bun run hoplite -- mcp-endpoint-check --url https://mcp.vendor.dev/mcp
+bun run hoplite -- project-mcp-config-check --file <config.json>
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

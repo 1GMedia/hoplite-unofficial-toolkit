@@ -18,6 +18,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createCommandRegistry } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
 import { mcpEndpointPolicyCommandDefinitions } from './mcp-endpoint-policy';
+import { projectMcpPlanCommandDefinitions } from './project-mcp-plans';
 
 type JsonObject = Record<string, unknown>;
 
@@ -88,6 +89,7 @@ const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization
 const FEATURE_COMMANDS = createCommandRegistry([
   foundationCommandDefinitions,
   mcpEndpointPolicyCommandDefinitions,
+  projectMcpPlanCommandDefinitions,
 ]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
