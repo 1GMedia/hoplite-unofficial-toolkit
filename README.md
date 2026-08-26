@@ -113,10 +113,11 @@ workflows without teaching each Codex session the route details again.
 ### Inspect settings and compatibility coverage
 
 The toolkit carries a sanitized registry of settings contracts currently
-evidenced by the official OpenAPI and authenticated Hoplite client. The model
-also distinguishes official-documentation and live-MCP sources when future
-entries are actually verified from those tiers. Registry entries are evidence
-records, not write permissions:
+evidenced by the official OpenAPI and authenticated Hoplite client, plus
+explicitly labeled local-inference entries that make no remote-contract claim.
+The model also distinguishes official-documentation and live-MCP sources when
+future entries are actually verified from those tiers. Registry entries are
+evidence records, not write permissions:
 
 ```bash
 bun run hoplite -- settings-capabilities
@@ -168,6 +169,48 @@ has not been verified live. A `401`, `403`, or `404` therefore reports the
 current credential result without claiming that the web product lacks the
 feature. The resolver does not infer effective preview-port precedence.
 
+### Inspect and plan repository binding
+
+Read the saved repository binding and a deterministic before-state digest, then
+resolve the saved full name against the official GitHub repository catalog and
+the compatible repo-settings surface:
+
+```bash
+bun run hoplite -- project-repository-get <project-id>
+bun run hoplite -- project-repository-resolve <project-id>
+```
+
+Repository changes are W2 actions. The CLI can validate an owner-only,
+maximum-24-hour resource policy and produce a local bind or unbind review plan:
+
+```bash
+bun run hoplite -- project-repository-plan-bind <project-id> \
+  --policy <policy.json> \
+  --account-id <account-id> \
+  --workspace-id <workspace-id> \
+  --origin <exact-policy-origin> \
+  --before-digest <state-digest> \
+  --repository-id <repository-id> \
+  --repository-full-name <owner/repository> \
+  --default-branch <branch> \
+  --inherit-default \
+  --client-operation-id <stable-id>
+
+bun run hoplite -- project-repository-plan-unbind <project-id> \
+  --policy <policy.json> \
+  --account-id <account-id> \
+  --workspace-id <workspace-id> \
+  --origin <exact-policy-origin> \
+  --before-digest <state-digest> \
+  --client-operation-id <stable-id>
+```
+
+These commands never change remote state. `project-repository-apply` remains a
+local blocked-status command because PATCH authentication, preservation of the
+current project name/scripts, post-write readback, and ambiguous-result
+idempotency are unverified. No exact unbind payload was observed. See the
+[repository binding contract](docs/project-repository-binding.md).
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -200,6 +243,8 @@ bun run hoplite -- repositories
 bun run hoplite -- branches <repository-id>
 bun run hoplite -- project-settings-get <project-id>
 bun run hoplite -- project-settings-resolve <project-id>
+bun run hoplite -- project-repository-get <project-id>
+bun run hoplite -- project-repository-resolve <project-id>
 bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>

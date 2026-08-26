@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { projectRepositoryCommandDefinitions } from './project-repository-commands';
 import { projectSettingsCommandDefinitions } from './project-settings-commands';
 import {
   apiKeySummary,
@@ -65,6 +66,7 @@ describe('hoplite-cli', () => {
     const commands = help.commands as Record<string, string>;
     const featureNames = new Set([
       ...foundationCommandDefinitions,
+      ...projectRepositoryCommandDefinitions,
       ...projectSettingsCommandDefinitions,
     ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
@@ -451,6 +453,23 @@ describe('hoplite-cli', () => {
     expect(defaultCallerEvidence('official-docs')).toContain('documentation');
     expect(defaultCallerEvidence('authenticated-client')).toContain('web client release');
     expect(defaultCallerEvidence('live-mcp')).toContain('Live Hoplite MCP');
+    expect(defaultCallerEvidence('local-inference')).toContain('no Hoplite remote caller contract');
+  });
+
+  test('does not represent repository unbind as an authenticated remote PATCH contract', () => {
+    const unbind = compatibilitySnapshot().capabilities.find(
+      capability => capability.id === 'project.repository.unbind',
+    );
+    expect(unbind).toMatchObject({
+      sourceTier: 'local-inference',
+      method: 'LOCAL',
+      path: 'local:project-repository-plan-unbind',
+      risk: 'W2',
+      status: 'blocked',
+    });
+    expect(unbind?.sourceTier).not.toBe('authenticated-client');
+    expect(unbind?.method).not.toBe('PATCH');
+    expect(unbind?.path).not.toBe('/api/projects/:projectId');
   });
 
   test('parses only short-lived, exact resource policies', () => {

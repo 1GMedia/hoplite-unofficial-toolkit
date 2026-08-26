@@ -17,12 +17,14 @@ The reviewed source is Hoplite's published OpenAPI document:
 ## Evidence registry
 
 `settings-capabilities` and `compatibility-status` expose a sanitized, bounded
-registry. The current entries come from official OpenAPI and authenticated
-client evidence. The model reserves official-documentation and live-MCP tiers
-for entries verified from those sources. Each capability records:
+registry. The current entries come from official OpenAPI, authenticated-client,
+and explicitly labeled local-inference evidence. The model reserves
+official-documentation and live-MCP tiers for entries verified from those
+sources. Each capability records:
 
-- source tier (`official-openapi`, `official-docs`, `authenticated-client`, or
-  `live-mcp`);
+- source tier (`official-openapi`, `official-docs`, `authenticated-client`,
+  `live-mcp`, or `local-inference`); `local-inference` never represents an
+  observed remote route, method, payload, or caller;
 - exact method and path template;
 - observed authentication status;
 - risk (`R0` read, `W1` routine write, `W2` sensitive/external write, or `W3`
@@ -68,10 +70,11 @@ segments. The validated canonical path is the same representation used to
 construct the fetch URL. Thread and settings writes cannot be re-enabled with
 an allowlist or `--confirm`; they require dedicated commands.
 
-## Future settings resource policy
+## Settings resource policy
 
 The local `resource-policy-check` command validates the policy prerequisite for
-future project/workspace writes. This release does not implement those writes.
+future project/workspace writes. Repository bind/unbind plan commands consume
+the same policy locally, but this release still does not execute those writes.
 The policy file must be opened without following symlinks, be a regular file
 owned by the current user, use owner-only mode `0400` or `0600`, be 32 KB or
 smaller, and be valid for at most 24 hours. Its strict JSON
@@ -105,6 +108,24 @@ match the authenticated owner/workspace, target resource, requested capability,
 origin, and risk ceiling at execution time. The requested action's risk is
 always derived from the compatibility registry; callers cannot supply or
 downgrade it.
+
+## Project repository compatibility
+
+`project-repository-get` uses the public project contract and emits a binding
+state digest. `project-repository-resolve` matches the saved repository full
+name to the public GitHub repository catalog, then reads the authenticated-client
+`repo-settings` compatibility contract when a binding exists.
+
+Local `project-repository-plan-bind` and `project-repository-plan-unbind`
+commands require exact `project.repository.bind` or
+`project.repository.unbind` W2 policy grants. The unbind registry entry is a
+`LOCAL`/`local-inference` capability used only for owner-policy validation; no
+remote route, method, or payload is evidenced. The observed bind PATCH is not
+executed because its OAuth write authorization, strict before-state preservation,
+readback, and ambiguous-result behavior remain unverified. The exact unbind
+payload was not observed at all. `project-repository-apply` is consequently a
+local blocked-status command with no network transport. See
+[`project-repository-binding.md`](project-repository-binding.md).
 
 ## Intentionally excluded
 

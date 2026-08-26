@@ -4,7 +4,8 @@ export type CapabilitySourceTier =
   | 'official-openapi'
   | 'official-docs'
   | 'authenticated-client'
-  | 'live-mcp';
+  | 'live-mcp'
+  | 'local-inference';
 
 export type CapabilityAuthStatus =
   | 'oauth-confirmed'
@@ -107,6 +108,7 @@ export function defaultCallerEvidence(sourceTier: CapabilitySourceTier): string 
     'official-docs': 'Official Hoplite documentation recorded during the stated verification date.',
     'authenticated-client': `Authenticated Hoplite web client release ${COMPATIBILITY_IDENTITY.client.release}.`,
     'live-mcp': 'Live Hoplite MCP tool schema observed during the stated verification date.',
+    'local-inference': 'Local toolkit inference only; no Hoplite remote caller contract was observed.',
   }[sourceTier];
 }
 
@@ -134,6 +136,8 @@ export const COMPATIBILITY_REGISTRY: readonly CompatibilityCapability[] = [
   capability({ id: 'project.get', area: 'projects', action: 'get', sourceTier: 'official-openapi', method: 'GET', path: '/api/projects/:projectId', authStatus: 'oauth-confirmed', risk: 'R0', status: 'implemented' }),
   capability({ id: 'models.list', area: 'project-agents', action: 'list-model-providers', sourceTier: 'authenticated-client', method: 'GET', path: '/api/model-providers', authStatus: 'oauth-confirmed', risk: 'R0', status: 'implemented' }),
   capability({ id: 'project.update', area: 'project-settings', action: 'update-project-settings', sourceTier: 'authenticated-client', method: 'PATCH', path: '/api/projects/:projectId', authStatus: 'unverified', risk: 'W1', status: 'discovered' }),
+  capability({ id: 'project.repository.bind', area: 'project-repository', action: 'bind-repository', sourceTier: 'authenticated-client', method: 'PATCH', path: '/api/projects/:projectId', authStatus: 'unverified', risk: 'W2', status: 'blocked', payloadEvidence: 'Observed web-client bind patch includes repositoryId, optional sourceControlConnectionId, baseBranch, defaultBranch, current name and lifecycle script overrides; the operation layer appends clientOperationId.', sideEffects: 'Changes the repository and branch used for future project work, cloning, and pull requests.', notes: 'Local policy-bound planning is implemented. Remote apply remains blocked pending authenticated write verification, strict before-state preservation, readback, and ambiguous-result reconciliation.' }),
+  capability({ id: 'project.repository.unbind', area: 'project-repository', action: 'unbind-repository', sourceTier: 'local-inference', method: 'LOCAL', path: 'local:project-repository-plan-unbind', authStatus: 'unverified', risk: 'W2', status: 'blocked', payloadEvidence: 'No remote repository-unbind route, method, or payload was observed; this entry records only a local inferred planning capability.', sideEffects: 'Generates a local review plan only. A future remote unbind would detach the project repository and disrupt future clone, branch, and pull-request behavior.', notes: 'The W2 registration exists for owner-only policy validation. It is not authenticated-client evidence and does not authorize or describe a remote contract.' }),
   capability({ id: 'project.repo-settings.get', area: 'project-repository', action: 'get-resolved-repository-settings', sourceTier: 'authenticated-client', method: 'GET', path: '/api/projects/:projectId/repo-settings', authStatus: 'unverified', risk: 'R0', status: 'implemented' }),
   capability({ id: 'project.environment.list', area: 'project-environment', action: 'list-variable-names', sourceTier: 'authenticated-client', method: 'GET', path: '/api/projects/:projectId/env-vars', authStatus: 'unverified', risk: 'R0', status: 'discovered', notes: 'Values must remain write-only and absent from normal output.' }),
   capability({ id: 'project.environment.set', area: 'project-environment', action: 'set-secret', sourceTier: 'authenticated-client', method: 'PUT', path: '/api/projects/:projectId/env-vars/:key', authStatus: 'unverified', risk: 'W2', status: 'discovered' }),
