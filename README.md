@@ -139,6 +139,30 @@ path template, payload/caller evidence, side effects, observed authentication
 status, risk class, implementation status, and last verification date. It never
 contains credentials, settings values, browser state, or tenant data.
 
+### Inspect personal agent context safely
+
+List aggregate personal memory and skill inventory through the authenticated-client
+compatibility reads without printing durable agent instructions or freeform
+labels:
+
+```bash
+bun run hoplite -- personal-memories-list
+bun run hoplite -- personal-skills-list
+```
+
+Memory content, skill bodies, raw identifiers, names, descriptions, and source
+labels are never emitted. Deterministic digests, per-item lengths, and item
+arrays are also prohibited. The CLI returns only total/presence counts, fixed
+scope/source enum counts, and request status. Neither command accepts output
+flags. A `401`, `403`, or `404` describes only the current credential and
+principal, not product-wide availability.
+
+No personal-context write command is provided. The browser client reveals
+create/update/delete call shapes, but OAuth support, server input limits,
+idempotency, tenant/role behavior, readback, and deletion guarantees have not
+been proven for safe CLI execution. See
+[`docs/personal-agent-context.md`](docs/personal-agent-context.md).
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +197,8 @@ bun run hoplite -- messages <thread-id> --limit 100
 bun run hoplite -- thread-capability <thread-id>
 bun run hoplite -- thread-usage <thread-id>
 bun run hoplite -- thread-pr-status <thread-id>
+bun run hoplite -- personal-memories-list
+bun run hoplite -- personal-skills-list
 ```
 
 Run `bun run hoplite -- help` for the complete command inventory.

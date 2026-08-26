@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { personalAgentContextCommandDefinitions } from './personal-agent-context-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,11 +63,34 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...personalAgentContextCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
     for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
+  test('validates personal feature arguments before reading OAuth state', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-preflight-test-'));
+    const previousPath = process.env.HOPLITE_OAUTH_PATH;
+    process.env.HOPLITE_OAUTH_PATH = join(directory, 'deliberately-missing-oauth.json');
+    try {
+      await expect(run(['personal-memories-list', 'unexpected']))
+        .rejects.toThrow('does not accept positional arguments');
+      await expect(run(['personal-skills-list', '--include-content']))
+        .rejects.toThrow('does not support --include-content');
+      await expect(run(['personal-memories-list', '--limit=101']))
+        .rejects.toThrow('does not support --limit');
+      await expect(run(['personal-skills-list', '--include-body=maybe']))
+        .rejects.toThrow('does not support --include-body');
+    } finally {
+      if (previousPath === undefined) delete process.env.HOPLITE_OAUTH_PATH;
+      else process.env.HOPLITE_OAUTH_PATH = previousPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test('parses positional values and both flag forms', () => {

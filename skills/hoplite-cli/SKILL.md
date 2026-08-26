@@ -1,6 +1,6 @@
 ---
 name: hoplite-cli
-description: Inspect and operate Hoplite tasks through the unofficial guarded CLI when a request involves Hoplite authentication, projects, threads, timelines, repositories, or explicitly approved task actions.
+description: Inspect and operate Hoplite through the unofficial guarded CLI when a request involves authentication, projects, threads, timelines, repositories, personal agent memories or skills, or explicitly approved task actions.
 ---
 
 # Hoplite CLI
@@ -34,6 +34,8 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts personal-memories-list
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts personal-skills-list
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
@@ -50,6 +52,20 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Personal agent memories and personal skill bodies are durable instructions and
+may contain private context. Their list commands never emit content, bodies,
+raw identifiers, names, descriptions, or source labels. Deterministic digests,
+per-item lengths, and item arrays are also prohibited. Only aggregate totals,
+presence counts, and fixed scope/source enum counts are available; neither
+command accepts output flags. A `401`, `403`, or `404` describes only the
+current OAuth credential and principal. Do not claim that the browser feature
+is unavailable from those results.
+
+Do not create, update, or delete personal memories or skills through the CLI.
+The authenticated client exposes write call shapes, but safe OAuth execution,
+server bounds, role/tenant rules, idempotency, readback, and deletion semantics
+are not verified. No plan/apply command exists for this evidence tier.
 
 ## Mutations
 
