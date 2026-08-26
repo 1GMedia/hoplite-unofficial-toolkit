@@ -36,6 +36,7 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts workspace-members-status
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +51,14 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Workspace members are a browser-session boundary. Use
+`workspace-members-status` to inspect the fixed local evidence record; it does
+not authenticate, make a network request, or emit member/invitation personal
+data. Better Auth member listing and mutation methods, plus the client-only
+invitation and domain auto-join routes, are not proven compatible with CLI
+OAuth or workspace API keys. Do not guess those contracts. Invite, role,
+remove, cancel-invitation, and domain auto-join writes remain blocked.
 
 ## Mutations
 

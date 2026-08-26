@@ -23,7 +23,8 @@ for entries verified from those sources. Each capability records:
 
 - source tier (`official-openapi`, `official-docs`, `authenticated-client`, or
   `live-mcp`);
-- exact method and path template;
+- exact HTTP method and path template, or a `BROWSER` client method when no
+  HTTP route was evidenced;
 - observed authentication status;
 - risk (`R0` read, `W1` routine write, `W2` sensitive/external write, or `W3`
   financial/destructive/credential write);
@@ -39,6 +40,26 @@ or destructive-action challenge. `compatibility-diff --baseline <file>` reports
 only identity changes and added, removed, or modified capability IDs. If a
 status snapshot was created with `--area`, the filter is stored and reused by
 the diff. Programmatic comparisons with mismatched filters fail closed.
+
+## Workspace members boundary
+
+The authenticated client proves three read surfaces, but it does not prove a
+non-browser credential contract for any of them:
+
+- member listing is a Better Auth `organization.listMembers` browser method;
+- pending invitations use `GET /api/orgs/invitations`; and
+- domain auto-join uses `GET /api/orgs/domain-auto-join`.
+
+The latter two paths are authenticated-client evidence, not public OpenAPI
+routes. Their compatibility with Hoplite OAuth and workspace API keys remains
+unknown, so the CLI does not call them. `workspace-members-status` is a local
+evidence command that makes this distinction without loading OAuth, making a
+network request, or emitting personal data.
+
+Invite and invitation-cancellation actions are blocked at W2. Role changes,
+member removal, and domain auto-join changes are blocked at W3 because they can
+change workspace authority or admission policy. No corresponding mutation
+command is registered.
 
 ## Compatibility reads
 
