@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
 import { foundationCommandDefinitions } from './foundation-commands';
+import { integrationStatusCommandDefinitions } from './integration-status-commands';
 import {
   apiKeySummary,
   authSummary,
@@ -62,11 +63,40 @@ describe('hoplite-cli', () => {
   test('reserves every legacy command advertised by help', async () => {
     const help = await run(['help']);
     const commands = help.commands as Record<string, string>;
-    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const featureNames = new Set([
+      ...foundationCommandDefinitions,
+      ...integrationStatusCommandDefinitions,
+    ].map(command => command.name));
     const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
     expect(advertisedLegacyNames.length).toBeGreaterThan(0);
     for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
     for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
+  test('rejects every integration invocation error before reading OAuth', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'hoplite-integration-preflight-test-'));
+    const previousPath = process.env.HOPLITE_OAUTH_PATH;
+    process.env.HOPLITE_OAUTH_PATH = join(directory, 'missing-oauth.json');
+    try {
+      for (const name of [
+        'source-control-connections',
+        'source-control-repositories',
+        'phone-status',
+      ]) {
+        await expect(run([name, 'unexpected'])).rejects.toThrow('does not accept positional');
+        await expect(run([name, '--project', 'prj_fixture'])).rejects.toThrow('does not support --project');
+      }
+      for (const name of ['slack-status', 'linear-status', 'sentry-status']) {
+        await expect(run([name, 'unexpected'])).rejects.toThrow('does not accept positional');
+        await expect(run([name, '--unknown'])).rejects.toThrow('does not support --unknown');
+        await expect(run([name, '--project'])).rejects.toThrow('valid --project id');
+        await expect(run([name, '--project', '../invalid'])).rejects.toThrow('valid --project id');
+      }
+    } finally {
+      if (previousPath === undefined) delete process.env.HOPLITE_OAUTH_PATH;
+      else process.env.HOPLITE_OAUTH_PATH = previousPath;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   test('parses positional values and both flag forms', () => {

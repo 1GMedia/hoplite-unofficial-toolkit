@@ -46,6 +46,32 @@ the diff. Programmatic comparisons with mismatched filters fail closed.
 - Usage metadata.
 - Pull-request status and comments.
 - Preview checklist.
+- Source-control connections and repositories.
+- Slack, Linear, and Sentry aggregate installation and binding-state counts
+  through the optional exact `projectId` status query.
+- Redacted phone connection state.
+
+Integration reads use the exact client-observed routes:
+
+| Command | Route | Output containment |
+| --- | --- | --- |
+| `source-control-connections` | `GET /api/source-control/connections` | Total/connected and fixed provider counts only. |
+| `source-control-repositories` | `GET /api/source-control/repositories` | Total, fixed provider, and fixed visibility counts only. |
+| `slack-status` | `GET /api/slack/status?projectId=:projectId` | Installation/configuration/binding counts only. |
+| `linear-status` | `GET /api/linear/status?projectId=:projectId` | Installation/configuration/binding counts only. |
+| `sentry-status` | `GET /api/sentry/status?projectId=:projectId` | Installation/binding and fixed status counts only. |
+| `phone-status` | `GET /api/phone/connection` | Connection/configuration/pairing counts only. |
+
+The `projectId` query is omitted when `--project` is absent. No separate GET
+route was evidenced for Slack, Linear, or Sentry project bindings. Binding
+mutation entries are also withheld from the registry until their exact payload
+and response schemas are evidenced. Connect, disconnect, sync, pairing, OAuth,
+provider consent, subscription changes, and binding upserts remain unavailable.
+
+All raw response objects are validated against exact bounded compatibility
+schemas before aggregation. No connection, repository, installation,
+workspace, team, channel, binding, project, or phone ID is emitted. Arbitrary
+remote names, hosts, accounts, URLs, and status strings are also prohibited.
 
 ## Guarded compatibility actions
 

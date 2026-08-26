@@ -1,6 +1,6 @@
 ---
 name: hoplite-cli
-description: Inspect and operate Hoplite tasks through the unofficial guarded CLI when a request involves Hoplite authentication, projects, threads, timelines, repositories, or explicitly approved task actions.
+description: Inspect and operate Hoplite through the unofficial guarded CLI when a request involves authentication, projects, threads, timelines, repositories, integration status, phone connection state, or explicitly approved task actions.
 ---
 
 # Hoplite CLI
@@ -36,6 +36,12 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts source-control-connections
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts source-control-repositories
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts slack-status --project <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts linear-status --project <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts sentry-status --project <project-id>
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts phone-status
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -50,6 +56,18 @@ Compare a previously redirected JSON snapshot with:
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
   --baseline <snapshot.json>
 ```
+
+Integration commands are status reads only. They make one request and do not
+retry. `--project` is optional only for Slack, Linear, and Sentry status and is
+sent as the exact `projectId` query. Do not use generic API access to invent
+project-binding GET or write routes: exact binding mutation schemas are not yet
+evidenced or registered.
+Never infer provider-wide absence from a 401, 403, 404, 405, 429, or 501 result.
+Integration output is aggregate-only. Never expect or request connection,
+repository, installation, workspace, team, channel, binding, project, or phone
+IDs, arbitrary remote names/hosts/accounts/status strings, or item arrays. Only
+totals, state/presence counts, and fixed evidenced provider/status counts are
+available.
 
 ## Mutations
 
@@ -70,8 +88,9 @@ requires an explicit idempotency key. Do not retry a mutation with a different
 operation ID when the first result is ambiguous.
 
 Do not guess undocumented routes or payloads. Archive/update, delete,
-checkpoint restore, PR mutations, terminal/log access, attachments, billing,
-and workspace recovery remain outside the dedicated command surface.
+checkpoint restore, PR mutations, terminal/log access, attachments, billing
+writes, provider connect/disconnect/OAuth actions, and workspace recovery remain
+outside the dedicated command surface.
 
 The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
 work around its canonical path checks or use it for a settings mutation. Future
