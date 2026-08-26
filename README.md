@@ -110,6 +110,35 @@ dedicated guarded commands when you explicitly approve a task mutation. This is
 useful for task coordination, operational summaries, and repeatable recovery
 workflows without teaching each Codex session the route details again.
 
+### Inspect settings and compatibility coverage
+
+The toolkit carries a sanitized registry of settings contracts currently
+evidenced by the official OpenAPI and authenticated Hoplite client. The model
+also distinguishes official-documentation and live-MCP sources when future
+entries are actually verified from those tiers. Registry entries are evidence
+records, not write permissions:
+
+```bash
+bun run hoplite -- settings-capabilities
+bun run hoplite -- settings-capabilities --area project-mcp
+bun run hoplite -- compatibility-status
+bun run hoplite -- compatibility-status --area project-environment
+```
+
+Save a status result using shell redirection, then compare it after an update.
+An `--area` filter is embedded in the snapshot and automatically reused by the
+diff:
+
+```bash
+bun run hoplite -- compatibility-status > hoplite-compatibility.json
+bun run hoplite -- compatibility-diff --baseline hoplite-compatibility.json
+```
+
+The snapshot records its OpenAPI and client identity, source tier, method and
+path template, payload/caller evidence, side effects, observed authentication
+status, risk class, implementation status, and last verification date. It never
+contains credentials, settings values, browser state, or tenant data.
+
 ### What this does not prove
 
 An HTTP success response proves that Hoplite accepted a request. It does not
@@ -173,6 +202,28 @@ bun run hoplite -- thread-stop thr_example1 \
 
 An accepted request proves delivery only. It does not prove that a remote
 agent, process, or application completed the requested work.
+
+The generic `api` command is permanently restricted to `GET` and `HEAD`.
+Caller-supplied paths are canonicalized once and reject literal or encoded dot
+segments, separators, and backslashes before fetch. All writes must use a
+dedicated command with an exact route and request schema:
+
+```bash
+bun run hoplite -- api --method GET --path /api/projects
+```
+
+Future project and workspace settings writes must also present an owner-owned,
+owner-only (`0400` or `0600`) resource policy with a lifetime no longer than 24
+hours.
+The parser is available now for local validation, but no settings write consumes
+it in this release:
+
+```bash
+chmod 400 hoplite-resource-policy.json
+bun run hoplite -- resource-policy-check --file hoplite-resource-policy.json
+```
+
+See [compatibility routes](docs/compatibility.md) for the strict policy schema.
 
 ## Install the Codex skill
 

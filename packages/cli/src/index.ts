@@ -15,6 +15,9 @@ import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
+import { createCommandRegistry } from './command-registry';
+import { foundationCommandDefinitions } from './foundation-commands';
+
 type JsonObject = Record<string, unknown>;
 
 type OAuthState = {
@@ -81,6 +84,7 @@ const THREAD_ACTION_COMMANDS = new Set([
   'thread-auto-title',
 ]);
 const OUTPUT_SENSITIVE_KEY_RE = /(?:access|refresh)?token|password|authorization|api[_-]?key|secret|login[_-]?url|upload[_-]?url|terminal|logs?/i;
+const FEATURE_COMMANDS = createCommandRegistry([foundationCommandDefinitions]);
 
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const command = argv[0] ?? 'help';
@@ -660,24 +664,55 @@ export function requireConfirmation(flags: Map<string, string>, method: string):
 }
 
 export function validateMutationPath(
-  path: string,
-  threadId?: string,
-  allowlist = configuredMutationAllowlist(),
-): string {
+  _path: string,
+  _threadId?: string,
+  _allowlist?: ReadonlySet<string>,
+): never {
+  throw new Error('Generic API mutations are permanently disabled; use a dedicated guarded command');
+}
+
+function hasDotSegment(pathname: string): boolean {
+  return pathname.split('/').some(segment => segment === '.' || segment === '..');
+}
+
+export function canonicalizeGenericApiPath(path: string, baseUrl = DEFAULT_API_BASE_URL): string {
   if (!path.startsWith('/')) throw new Error('API path must be absolute and start with /');
-  if (!path.startsWith('/api/')) throw new Error('API path must stay under /api/');
-  const match = path.match(/^\/api\/threads\/(thr_[A-Za-z0-9]+)(?:\/|$)/);
-  const pathThreadId = match?.[1];
-  const selectedThreadId = threadId ? validatedThreadId(threadId) : pathThreadId;
-  if (!selectedThreadId) throw new Error('API path must target a Hoplite thread');
-  requireAllowlistedThread(selectedThreadId, allowlist);
-  if (!pathThreadId) {
-    throw new Error('API path must target an explicitly allowlisted Hoplite thread');
+  if (path.includes('#')) throw new Error('API path fragments are not allowed');
+  if (/[\u0000-\u001f\u007f]/.test(path)) throw new Error('API path contains control characters');
+  const queryAt = path.indexOf('?');
+  const rawPathname = queryAt >= 0 ? path.slice(0, queryAt) : path;
+  if (!rawPathname.startsWith('/api/')) throw new Error('API path must stay under /api/');
+  if (rawPathname.includes('\\')) throw new Error('API path backslashes are not allowed');
+  if (rawPathname.includes('//')) throw new Error('API path contains ambiguous empty segments');
+  if (/%(?:25)*(?:2f|5c)/i.test(rawPathname)) {
+    throw new Error('API path contains an encoded separator or backslash');
   }
-  if (threadId && pathThreadId && threadId !== pathThreadId) {
-    throw new Error('The --thread id does not match the thread id in --path');
+
+  let inspected = rawPathname;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (hasDotSegment(inspected)) throw new Error('API path dot segments are not allowed');
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(inspected);
+    } catch {
+      throw new Error('API path contains invalid percent encoding');
+    }
+    if (decoded.includes('\\')) throw new Error('API path backslashes are not allowed');
+    if (decoded.includes('//')) throw new Error('API path contains ambiguous empty segments');
+    if (decoded === inspected) break;
+    inspected = decoded;
+    if (depth === 7) throw new Error('API path encoding is excessively nested');
   }
-  return path;
+  if (hasDotSegment(inspected)) throw new Error('API path dot segments are not allowed');
+
+  const origin = apiBaseUrl(baseUrl);
+  const parsed = new URL(path, `${origin}/`);
+  if (parsed.origin !== origin || !parsed.pathname.startsWith('/api/')) {
+    throw new Error('API path resolved outside the configured API origin');
+  }
+  const canonical = `${parsed.pathname}${parsed.search}`;
+  if (!canonical.startsWith('/api/')) throw new Error('API path must stay under /api/');
+  return canonical;
 }
 
 function apiBaseUrl(value: string): string {
@@ -866,22 +901,23 @@ export function summarizeApiResponse(raw: string, key: string): JsonObject {
 
 async function directApiRequest(flags: Map<string, string>): Promise<JsonObject> {
   const method = (flags.get('method') || 'GET').toUpperCase();
-  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(method)) {
-    throw new Error(`Unsupported API method: ${method}`);
+  if (!['GET', 'HEAD'].includes(method)) {
+    throw new Error('Generic API access is permanently GET/HEAD-only; use a dedicated guarded command for writes');
   }
-  requireConfirmation(flags, method);
-  const path = validateMutationPath(flags.get('path') ?? '', flags.get('thread'));
   const body = bodyFromFlags(flags);
-  if (['GET', 'HEAD', 'DELETE'].includes(method) && body !== undefined) {
+  if (body !== undefined) {
     throw new Error(`${method} requests cannot include --body-json or --body-file`);
   }
 
   const credential = loadApiCredential();
   const key = credential.key;
+  const baseUrl = apiBaseUrl(credential.baseUrl);
+  const path = canonicalizeGenericApiPath(flags.get('path') ?? '', baseUrl);
+  const requestUrl = new URL(path, `${baseUrl}/`);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
-      const response = await fetch(`${apiBaseUrl(credential.baseUrl)}${path}`, {
+    const response = await fetch(requestUrl, {
       method,
       headers: {
         Authorization: `Bearer ${key}`,
@@ -1049,8 +1085,9 @@ function help(): JsonObject {
       'thread-auto-title': 'Regenerate an allowlisted task title; requires --confirm',
       models: 'List current Hoplite model providers',
       tools: 'List live Hoplite MCP tool schemas',
-      api: 'Call one explicitly supplied API route for one allowlisted thread; direct API mutations require HOPLITE_API_KEY and --confirm',
+      api: 'Read one explicitly supplied canonical API route with GET/HEAD; generic writes are permanently disabled',
       'api-auth': 'Check whether HOPLITE_API_KEY is present without printing it',
+      ...FEATURE_COMMANDS.descriptions(),
       message: 'Send a message to one allowlisted existing thread through the authenticated MCP session; requires --confirm',
     },
     apiAuth: 'Set HOPLITE_API_KEY in the environment; never put keys in source, prompts, or logs',
@@ -1066,6 +1103,18 @@ export async function run(argv: string[]): Promise<JsonObject> {
   }
   if (parsed.command === 'auth') return authSummary();
   if (parsed.command === 'api-auth') return apiKeySummary();
+
+  const featureCommand = FEATURE_COMMANDS.get(parsed.command);
+  if (featureCommand?.transport === 'local') {
+    return featureCommand.run({ positionals: parsed.positionals, flags: parsed.flags });
+  }
+  if (featureCommand?.transport === 'mcp') {
+    return withClient(async client => featureCommand.run({
+      positionals: parsed.positionals,
+      flags: parsed.flags,
+      client,
+    }));
+  }
 
   if (parsed.command === 'api') return directApiRequest(parsed.flags);
 

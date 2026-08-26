@@ -1,19 +1,25 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
+import { createCommandRegistry, LEGACY_COMMAND_NAMES } from './command-registry';
+import { foundationCommandDefinitions } from './foundation-commands';
 import {
   apiKeySummary,
   authSummary,
   buildReadApiRequest,
   buildThreadActionRequest,
+  canonicalizeGenericApiPath,
   createThreadBodyFromFlags,
   parseBoolean,
   parseCliArgs,
   redactText,
   redactSecrets,
   requireConfirmation,
+  run,
   messageTextFromFlags,
   normalizeOAuthRefreshResponse,
   oauthNeedsRefresh,
@@ -23,11 +29,46 @@ import {
   summarizeApiResponse,
   validateMutationPath,
 } from './index';
+import {
+  compatibilitySnapshot,
+  compatibilityStatus,
+  defaultCallerEvidence,
+  diffCompatibility,
+  loadResourcePolicy,
+  parseResourcePolicy,
+  settingsCapabilitySnapshot,
+  validateResourcePolicyGrant,
+} from './compatibility';
 
 const TEST_THREAD_IDS = ['thr_testalpha123', 'thr_testbeta456'] as const;
 const TEST_ALLOWLIST = new Set<string>(TEST_THREAD_IDS);
 
 describe('hoplite-cli', () => {
+  test('forbids feature modules from shadowing every legacy command and help alias', () => {
+    for (const name of LEGACY_COMMAND_NAMES) {
+      expect(() => createCommandRegistry([[{
+        name,
+        description: 'must not register',
+        transport: 'local',
+        run: () => ({}),
+      }]])).toThrow('reserved legacy command');
+    }
+    expect(() => createCommandRegistry([[
+      { name: 'feature-one', description: 'one', transport: 'local', run: () => ({}) },
+      { name: 'feature-one', description: 'two', transport: 'local', run: () => ({}) },
+    ]])).toThrow('Duplicate registered command');
+  });
+
+  test('reserves every legacy command advertised by help', async () => {
+    const help = await run(['help']);
+    const commands = help.commands as Record<string, string>;
+    const featureNames = new Set(foundationCommandDefinitions.map(command => command.name));
+    const advertisedLegacyNames = Object.keys(commands).filter(name => !featureNames.has(name));
+    expect(advertisedLegacyNames.length).toBeGreaterThan(0);
+    for (const name of advertisedLegacyNames) expect(LEGACY_COMMAND_NAMES.has(name)).toBe(true);
+    for (const alias of ['help', '--help', '-h']) expect(LEGACY_COMMAND_NAMES.has(alias)).toBe(true);
+  });
+
   test('parses positional values and both flag forms', () => {
     const parsed = parseCliArgs([
       'inspect',
@@ -71,13 +112,32 @@ describe('hoplite-cli', () => {
     expect(() => requireConfirmation(new Map(), 'GET')).not.toThrow();
   });
 
-  test('limits direct API paths to a caller-configured allowlist', () => {
-    const [threadId, otherThreadId] = TEST_THREAD_IDS;
-    expect(validateMutationPath(`/api/threads/${threadId}/messages`, threadId, TEST_ALLOWLIST)).toContain(threadId);
-    expect(() => validateMutationPath('/api/projects', threadId, TEST_ALLOWLIST)).toThrow('allowlist');
-    expect(() => validateMutationPath('/api/threads/thr_notallowed/messages', undefined, TEST_ALLOWLIST)).toThrow('allowlist');
-    expect(() => validateMutationPath(`/api/threads/${threadId}/messages`, otherThreadId, TEST_ALLOWLIST)).toThrow('match');
-    expect(() => validateMutationPath(`/api/threads/${threadId}/messages`, threadId, new Set())).toThrow('disabled');
+  test('permanently disables generic API mutations', () => {
+    const [threadId] = TEST_THREAD_IDS;
+    expect(() => validateMutationPath(`/api/threads/${threadId}/messages`, threadId, TEST_ALLOWLIST)).toThrow('permanently disabled');
+  });
+
+  test('canonicalizes only unambiguous generic API read paths', () => {
+    expect(canonicalizeGenericApiPath('/api/projects?limit=25')).toBe('/api/projects?limit=25');
+    expect(canonicalizeGenericApiPath('/api/threads/thr_testalpha123/messages')).toBe('/api/threads/thr_testalpha123/messages');
+    for (const path of [
+      '/api/threads/thr_testalpha123/../../projects/prj_target',
+      '/api/threads/thr_testalpha123/%2e%2e/%2e%2e/projects/prj_target',
+      '/api/threads/thr_testalpha123/%252e%252e/%252e%252e/projects/prj_target',
+    ]) {
+      expect(() => canonicalizeGenericApiPath(path)).toThrow('dot segments');
+    }
+    for (const path of [
+      '/api/threads/thr_testalpha123%2f..%2fprojects/prj_target',
+      '/api/threads/thr_testalpha123%252f..%252fprojects/prj_target',
+      '/api/threads/thr_testalpha123%5c..%5cprojects/prj_target',
+      '/api/threads/thr_testalpha123%255c..%255cprojects/prj_target',
+    ]) {
+      expect(() => canonicalizeGenericApiPath(path)).toThrow('encoded separator');
+    }
+    expect(() => canonicalizeGenericApiPath('/api/threads/thr_testalpha123\\..\\projects')).toThrow('backslashes');
+    expect(() => canonicalizeGenericApiPath('//example.test/api/projects')).toThrow();
+    expect(() => canonicalizeGenericApiPath('/health')).toThrow('/api/');
   });
 
   test('validates message targets and bounded content', () => {
@@ -333,5 +393,200 @@ describe('hoplite-cli', () => {
     }), 'fixture_api_key_value_123456789');
     expect(summary.itemCount).toBe(1);
     expect(JSON.stringify(summary)).not.toContain('private prompt');
+  });
+
+  test('emits a bounded settings capability and compatibility status registry', () => {
+    const snapshot = settingsCapabilitySnapshot(new Date('2026-08-25T12:00:00.000Z'));
+    expect(snapshot.identity.registryVersion).toBe(1);
+    expect(snapshot.capabilities.some(entry => entry.id === 'mcp.servers.list')).toBe(true);
+    expect(snapshot.capabilities.some(entry => entry.id === 'project.delete' && entry.status === 'blocked')).toBe(true);
+    expect(snapshot.capabilities.every(entry => Boolean(entry.payloadEvidence && entry.callerEvidence && entry.sideEffects))).toBe(true);
+    const status = compatibilityStatus(snapshot);
+    expect(status.capabilityCount).toBe(snapshot.capabilities.length);
+    expect(JSON.stringify(status)).not.toMatch(/token|cookie|authorization/i);
+  });
+
+  test('diffs compatibility snapshots by identity and capability contract', () => {
+    const before = compatibilitySnapshot(new Date('2026-08-25T12:00:00.000Z'));
+    const unchanged = diffCompatibility(before, compatibilitySnapshot(new Date('2026-08-25T12:05:00.000Z')));
+    expect(unchanged.changed).toBe(false);
+    const changedBaseline = structuredClone(before);
+    changedBaseline.capabilities[0]!.path = '/api/old-projects';
+    const changed = diffCompatibility(changedBaseline, compatibilitySnapshot(new Date('2026-08-25T12:05:00.000Z')));
+    expect(changed.changed).toBe(true);
+    expect(changed.modified).toContain(changedBaseline.capabilities[0]!.id);
+    for (const field of ['area', 'action', 'notes'] as const) {
+      const metadataBaseline = structuredClone(before);
+      metadataBaseline.capabilities[0]![field] = `changed-${field}`;
+      const metadataChange = diffCompatibility(
+        metadataBaseline,
+        compatibilitySnapshot(new Date('2026-08-25T12:05:00.000Z')),
+      );
+      expect(metadataChange.modified).toContain(metadataBaseline.capabilities[0]!.id);
+    }
+  });
+
+  test('preserves area filters when diffing compatibility snapshots', () => {
+    const before = compatibilitySnapshot(
+      new Date('2026-08-25T12:00:00.000Z'),
+      'project-environment',
+    );
+    const statusOutput = compatibilityStatus(before);
+    expect(statusOutput.filter).toEqual({ area: 'project-environment' });
+    const unchanged = diffCompatibility(statusOutput);
+    expect(unchanged.changed).toBe(false);
+    expect(unchanged.filter).toEqual({ area: 'project-environment' });
+    expect(() => diffCompatibility(
+      before,
+      compatibilitySnapshot(new Date('2026-08-25T12:05:00.000Z')),
+    )).toThrow('area filters do not match');
+  });
+
+  test('uses source-tier-specific default caller evidence', () => {
+    expect(defaultCallerEvidence('official-openapi')).toContain('OpenAPI');
+    expect(defaultCallerEvidence('official-docs')).toContain('documentation');
+    expect(defaultCallerEvidence('authenticated-client')).toContain('web client release');
+    expect(defaultCallerEvidence('live-mcp')).toContain('Live Hoplite MCP');
+  });
+
+  test('parses only short-lived, exact resource policies', () => {
+    const now = Date.parse('2026-08-25T12:00:00.000Z');
+    const fixture = {
+      version: 1,
+      owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+      origins: ['https://api.hoplite.sh'],
+      resources: [{
+        kind: 'project',
+        id: 'prj_fixture',
+        capabilities: ['project.update'],
+        riskCeiling: 'W1',
+      }],
+      issuedAt: '2026-08-25T11:55:00.000Z',
+      expiresAt: '2026-08-25T13:00:00.000Z',
+    };
+    expect(parseResourcePolicy(fixture, now).resources[0]?.id).toBe('prj_fixture');
+    expect(() => parseResourcePolicy({ ...fixture, expiresAt: '2026-08-25T11:59:00.000Z' }, now)).toThrow('expired');
+    expect(() => parseResourcePolicy({ ...fixture, extra: true }, now)).toThrow('unsupported fields');
+    expect(() => parseResourcePolicy({
+      ...fixture,
+      resources: [{
+        ...fixture.resources[0],
+        capabilities: ['project.unknown-write'],
+      }],
+    }, now)).toThrow('unknown or non-write capability');
+    expect(() => parseResourcePolicy({
+      ...fixture,
+      origins: ['https://api.hoplite.sh/path'],
+    }, now)).toThrow('exact HTTPS');
+  });
+
+  test('requires owner-only permissions for resource policy files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hoplite-policy-test-'));
+    const path = join(dir, 'policy.json');
+    const linkPath = join(dir, 'policy-link.json');
+    const now = Date.parse('2026-08-25T12:00:00.000Z');
+    try {
+      writeFileSync(path, JSON.stringify({
+        version: 1,
+        owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+        origins: ['https://api.hoplite.sh'],
+        resources: [{
+          kind: 'project',
+          id: 'prj_fixture',
+          capabilities: ['project.update'],
+          riskCeiling: 'W2',
+        }],
+        issuedAt: '2026-08-25T11:55:00.000Z',
+        expiresAt: '2026-08-25T13:00:00.000Z',
+      }), { mode: 0o600 });
+      expect(loadResourcePolicy(path, now).resources[0]?.kind).toBe('project');
+      chmodSync(path, 0o400);
+      expect(loadResourcePolicy(path, now).resources[0]?.id).toBe('prj_fixture');
+      symlinkSync(path, linkPath);
+      expect(() => loadResourcePolicy(linkPath, now)).toThrow('non-symlink');
+      chmodSync(path, 0o644);
+      expect(() => loadResourcePolicy(path, now)).toThrow('owner-only');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a FIFO policy without waiting for a writer', () => {
+    if (process.platform === 'win32') return;
+    const dir = mkdtempSync(join(tmpdir(), 'hoplite-policy-fifo-test-'));
+    const path = join(dir, 'policy.fifo');
+    try {
+      const created = spawnSync('mkfifo', [path], { encoding: 'utf8' });
+      if (created.error && (created.error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      expect(created.status).toBe(0);
+      const moduleUrl = pathToFileURL(join(import.meta.dir, 'compatibility.ts')).href;
+      const script = `
+        import { loadResourcePolicy } from ${JSON.stringify(moduleUrl)};
+        try {
+          loadResourcePolicy(${JSON.stringify(path)}, Date.parse('2026-08-25T12:00:00.000Z'));
+          process.exit(2);
+        } catch (error) {
+          if (!String(error).includes('regular non-symlink file')) process.exit(3);
+        }
+      `;
+      const checked = spawnSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        timeout: 2_000,
+      });
+      expect(checked.error).toBeUndefined();
+      expect(checked.signal).toBeNull();
+      expect(checked.status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('authorizes only exact owner, origin, resource, capability, and risk grants', () => {
+    const now = Date.parse('2026-08-25T12:00:00.000Z');
+    const policy = parseResourcePolicy({
+      version: 1,
+      owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+      origins: ['https://api.hoplite.sh'],
+      resources: [{
+        kind: 'project',
+        id: 'prj_fixture',
+        capabilities: ['project.update'],
+        riskCeiling: 'W1',
+      }],
+      issuedAt: '2026-08-25T11:55:00.000Z',
+      expiresAt: '2026-08-25T13:00:00.000Z',
+    }, now);
+    const request = {
+      accountId: 'usr_fixture',
+      workspaceId: 'org_fixture',
+      origin: 'https://api.hoplite.sh',
+      kind: 'project' as const,
+      resourceId: 'prj_fixture',
+      capability: 'project.update',
+    };
+    expect(validateResourcePolicyGrant(policy, request, now).authorized).toBe(true);
+    expect(() => validateResourcePolicyGrant(policy, { ...request, accountId: 'usr_other' }, now)).toThrow('owner');
+    expect(() => validateResourcePolicyGrant(policy, { ...request, resourceId: 'prj_other' }, now)).toThrow('resource');
+    expect(() => validateResourcePolicyGrant(policy, { ...request, capability: 'project.delete' }, now)).toThrow('capability');
+    const callerRiskDowngrade = { ...request, risk: 'W1' } as unknown as typeof request;
+    expect(() => validateResourcePolicyGrant(policy, callerRiskDowngrade, now)).toThrow('must not be caller supplied');
+
+    const lowCeiling = parseResourcePolicy({
+      version: 1,
+      owner: { accountId: 'usr_fixture', workspaceId: 'org_fixture' },
+      origins: ['https://api.hoplite.sh'],
+      resources: [{
+        kind: 'project',
+        id: 'prj_fixture',
+        capabilities: ['project.delete'],
+        riskCeiling: 'W1',
+      }],
+      issuedAt: '2026-08-25T11:55:00.000Z',
+      expiresAt: '2026-08-25T13:00:00.000Z',
+    }, now);
+    expect(() => validateResourcePolicyGrant(lowCeiling, {
+      ...request,
+      capability: 'project.delete',
+    }, now)).toThrow('risk');
   });
 });

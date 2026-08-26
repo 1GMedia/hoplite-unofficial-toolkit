@@ -34,10 +34,22 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts settings-capabilities
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-status
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
 do not prove that downstream work actually progressed.
+
+Use `settings-capabilities --area <area>` to distinguish implemented commands
+from authenticated-client contracts that are only discovered or blocked. A
+registry entry is evidence, not permission to call an undocumented write.
+Compare a previously redirected JSON snapshot with:
+
+```bash
+bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts compatibility-diff \
+  --baseline <snapshot.json>
+```
 
 ## Mutations
 
@@ -60,6 +72,12 @@ operation ID when the first result is ambiguous.
 Do not guess undocumented routes or payloads. Archive/update, delete,
 checkpoint restore, PR mutations, terminal/log access, attachments, billing,
 and workspace recovery remain outside the dedicated command surface.
+
+The generic `api` command is permanently `GET`/`HEAD`-only. Never attempt to
+work around its canonical path checks or use it for a settings mutation. Future
+project/workspace writes also require an owner-only expiring resource policy;
+`resource-policy-check --file <policy.json>` validates that local prerequisite
+without authorizing or changing Hoplite state.
 
 ## Completion evidence
 
