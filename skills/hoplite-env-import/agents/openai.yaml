@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hoplite ENV Import"
+  short_description: "Import and verify Hoplite environment variables"
+  default_prompt: "Use $hoplite-env-import to import the supplied environment JSON into the specified Hoplite project and verify it saved."

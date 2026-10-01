@@ -1,0 +1,21 @@
+name: ENV import skill
+
+on:
+  push:
+    paths:
+      - 'skills/hoplite-env-import/**'
+      - '.github/workflows/env-import-skill.yml'
+  pull_request:
+    paths:
+      - 'skills/hoplite-env-import/**'
+      - '.github/workflows/env-import-skill.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 -m unittest discover -s skills/hoplite-env-import/tests -p 'test_*.py' -v
