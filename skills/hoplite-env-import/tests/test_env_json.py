@@ -90,6 +90,77 @@ class EnvironmentTests(unittest.TestCase):
             status = env_json.main(args)
         return status, output.getvalue()
 
+    def guard_args(self):
+        return [
+            "guard-ui", "--workspace", "fixture-workspace", "--project", "team/example-app",
+            "--observed-workspace", "fixture-workspace", "--observed-project", "team/example-app",
+        ]
+
+    def test_ui_guard_requires_exact_project_scope_and_confirmation(self):
+        target = "project-env:fixture-workspace:team/example-app"
+        with patch.dict("os.environ", {"HOPLITE_MUTATION_ALLOWLIST": target}, clear=True):
+            status, output = self.run_main(self.guard_args())
+            self.assertEqual(status, 2)
+            self.assertFalse(json.loads(output)["ok"])
+            status, output = self.run_main(self.guard_args() + ["--confirm"])
+            self.assertEqual(status, 0)
+            self.assertEqual(json.loads(output), {
+                "ok": True, "mutation_gate_passed": True, "target": target,
+            })
+
+    def test_ui_guard_fails_closed_for_missing_or_unrelated_allowlist(self):
+        examples = [
+            "", "thr_fixtureOnly", "*", "project-env:*:team/example-app",
+            "project-env:fixture-other:team/example-app",
+            "project-env:fixture-workspace:other/example-app",
+            "project-env:fixture-workspace:team/example-app-extra",
+            "project-env:fixture-workspace:Team/example-app",
+            "fixture-secret-never-output",
+        ]
+        for allowlist in examples:
+            with self.subTest(allowlist=allowlist), patch.dict(
+                "os.environ", {"HOPLITE_MUTATION_ALLOWLIST": allowlist}, clear=True
+            ):
+                status, output = self.run_main(self.guard_args() + ["--confirm"])
+                self.assertEqual(status, 2)
+                self.assertFalse(json.loads(output)["ok"])
+                self.assertNotIn("fixture-secret-never-output", output)
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(self.run_main(self.guard_args() + ["--confirm"])[0], 2)
+
+    def test_ui_guard_rechecks_observed_identity_even_when_other_target_is_allowed(self):
+        allowlist = "project-env:fixture-workspace:team/example-app,project-env:fixture-other:team/other"
+        for flag, observed in [
+            ("--observed-workspace", "fixture-other"),
+            ("--observed-project", "team/other"),
+            ("--observed-workspace", ""),
+        ]:
+            args = self.guard_args() + ["--confirm"]
+            args[args.index(flag) + 1] = observed
+            with self.subTest(flag=flag, observed=observed), patch.dict(
+                "os.environ", {"HOPLITE_MUTATION_ALLOWLIST": allowlist}, clear=True
+            ):
+                self.assertEqual(self.run_main(args)[0], 2)
+
+    def test_ui_guard_rejects_ambiguous_target_identity(self):
+        for flag, target in [
+            ("--workspace", ""), ("--workspace", "fixture:workspace"),
+            ("--workspace", "fixture,workspace"), ("--workspace", "fixture workspace"),
+            ("--project", "example-app"), ("--project", "team/*"),
+            ("--project", "team/.."), ("--project", "team/repo/extra"),
+        ]:
+            args = self.guard_args() + ["--confirm"]
+            args[args.index(flag) + 1] = target
+            with self.subTest(flag=flag, target=target), patch.dict("os.environ", {}, clear=True):
+                self.assertEqual(self.run_main(args)[0], 2)
+
+    def test_ui_guard_accepts_exact_entry_in_shared_allowlist_without_reading_values(self):
+        allowlist = "thr_fixtureOnly, project-env:fixture-workspace:team/example-app\nproject-env:other:team/other"
+        with patch.dict("os.environ", {"HOPLITE_MUTATION_ALLOWLIST": allowlist}, clear=True), patch.object(
+            env_json, "read_environment", side_effect=AssertionError("Guard must not read ENV values")
+        ):
+            self.assertEqual(self.run_main(self.guard_args() + ["--confirm"])[0], 0)
+
     def test_cli_validation_and_invalid_json_are_redacted(self):
         value = "fixture-secret-never-output"
         status, output = self.run_main(["validate"], json.dumps({"FIXTURE_KEY": value}))

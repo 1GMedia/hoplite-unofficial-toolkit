@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline JSON ENV validation, safe dotenv rendering, and exact comparison."""
+"""Offline ENV validation, dotenv rendering, comparison, and UI authorization."""
 
 import argparse
 import json
@@ -14,6 +14,26 @@ class EnvError(ValueError):
 
 
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*", re.ASCII)
+WORKSPACE = re.compile(r"[A-Za-z0-9_-]{1,128}", re.ASCII)
+PROJECT = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", re.ASCII)
+
+
+def require_ui_mutation(workspace, project, observed_workspace, observed_project, confirm):
+    """Check local authorization only; never contacts or mutates Hoplite."""
+    if not WORKSPACE.fullmatch(workspace) or not PROJECT.fullmatch(project):
+        raise EnvError("A workspace ID and repository-qualified project are required")
+    if any(part in {".", ".."} for part in project.split("/")):
+        raise EnvError("A repository-qualified project is required")
+    if (workspace, project) != (observed_workspace, observed_project):
+        raise EnvError("The observed destination does not match the intended workspace/project")
+    target = f"project-env:{workspace}:{project}"
+    raw_allowlist = os.environ.get("HOPLITE_MUTATION_ALLOWLIST", "")
+    allowlist = set(filter(None, re.split(r"[\s,]+", raw_allowlist)))
+    if target not in allowlist:
+        raise EnvError("The exact project-env target is not in HOPLITE_MUTATION_ALLOWLIST")
+    if not confirm:
+        raise EnvError("UI environment mutations require --confirm")
+    return {"ok": True, "mutation_gate_passed": True, "target": target}
 
 
 def unique_object(pairs):
@@ -107,8 +127,20 @@ def main(argv=None):
     verify = commands.add_parser("verify", help="Compare imported keys and exact values")
     verify.add_argument("--input", required=True, help="Expected JSON path, or - for stdin")
     verify.add_argument("--actual", required=True, help="Destination JSON readback path")
+    guard = commands.add_parser("guard-ui", help="Check exact project authorization; performs no import")
+    guard.add_argument("--workspace", required=True, help="Intended workspace ID")
+    guard.add_argument("--project", required=True, help="Intended owner/repository")
+    guard.add_argument("--observed-workspace", required=True, help="Workspace ID from fresh destination state")
+    guard.add_argument("--observed-project", required=True, help="Owner/repository from fresh destination state")
+    guard.add_argument("--confirm", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.command == "guard-ui":
+            receipt = require_ui_mutation(
+                args.workspace, args.project, args.observed_workspace, args.observed_project, args.confirm
+            )
+            print(json.dumps(receipt, ensure_ascii=True))
+            return 0
         expected = read_environment(args.input)
         if args.command == "verify":
             if args.actual == "-":

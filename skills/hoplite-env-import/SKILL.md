@@ -27,6 +27,35 @@ its own; it does not depend on the toolkit CLI or a checkout-specific path.
   PRs. Suppress secret-bearing UI observations and emit only counts and names.
   Clear temporary value buffers after verification.
 
+## Authorize UI changes
+
+Read-only inspection is the default. Before staging or editing any destination
+values, resolve the intended workspace ID and `owner/repository` from supported
+read-only state. Run the mandatory offline guard with the intended identity and
+the identity from a fresh destination observation:
+
+```bash
+python3 <skill-directory>/scripts/env_json.py guard-ui \
+  --workspace fixture-workspace --project team/example-app \
+  --observed-workspace fixture-workspace --observed-project team/example-app \
+  --confirm
+```
+
+The preconfigured `HOPLITE_MUTATION_ALLOWLIST` must contain the exact entry
+`project-env:fixture-workspace:team/example-app` (comma or whitespace separated).
+These are synthetic examples: substitute the verified IDs for this task. This
+namespace belongs to this helper; it does not change the toolkit CLI's thread
+allowlist syntax. Thread IDs, wildcards, and another workspace/project do not
+authorize this import. Do not expand the allowlist to make a failed guard pass.
+Use `--confirm` only within the user's existing authorization for these changes.
+
+Require exit status zero and `mutation_gate_passed: true` for the exact target
+before any paste or edit. Run it again with fresh destination identity immediately
+before Save. If the ID, allowlist, confirmation, or helper is unavailable, stop
+with read-only inspection; do not stage or save. A successful guard is a local
+authorization check, not evidence that an import happened, and cannot enforce
+UI clicks itself. The executing agent must enforce this boundary.
+
 ## Validate and import
 
 Accept a JSON object whose keys are environment variable names and whose values
@@ -45,8 +74,9 @@ python3 <skill-directory>/scripts/env_json.py verify \
 
 `--input -` reads stdin; no values are accepted as command arguments. Existing
 files must stay outside the repository and be restricted to the current user.
-The helper is optional when source and destination values already live in a
-computer-use runtime; apply the same strict checks there.
+The validation and comparison commands are optional when source and destination
+values already live in a computer-use runtime; apply the same strict checks
+there. The UI mutation guard is mandatory even in that runtime.
 
 Prefer a verified, dedicated environment API only if the installed toolkit
 actually supports it. Preserve its mutation allowlist and confirmation gates.
@@ -84,8 +114,9 @@ preserve source files supplied by the user.
 1. Before saving, compare each staged value to its source string in memory.
    Variable names and masked bullets alone do not prove value fidelity. Scroll
    through the full list; native accessibility may expose only visible rows.
-2. Save once and wait for the pending state to resolve. A clipboard timeout or
-   delayed response is ambiguous: inspect the rows and pending state before
+2. Recheck fresh destination identity and pass `guard-ui --confirm` for that
+   exact target, then Save once and wait for the pending state to resolve.
+   A clipboard timeout or delayed response is ambiguous: inspect the rows and pending state before
    retrying, so the import is not applied twice.
 3. Reopen the project's Environment view. Confirm every imported name persisted,
    no unsaved state remains, and any keys outside the requested scope remain.

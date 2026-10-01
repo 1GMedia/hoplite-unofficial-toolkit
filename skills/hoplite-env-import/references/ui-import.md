@@ -36,7 +36,13 @@ call source; reference runtime variables instead.
 ## Stage the import
 
 Read the destination project identity and current controls from a fresh
-observation. In the observed Mac UI, bulk import is supported by pasting a `.env`
+observation. Resolve its workspace ID and repository-qualified project and pass
+the mandatory `guard-ui --confirm` check described in SKILL.md before any paste
+or individual field change. Missing authorization or ambiguous identity means
+stop without staging. Do not substitute a thread allowlist or modify the
+allowlist to unblock the import.
+
+In the observed Mac UI, bulk import is supported by pasting a `.env`
 into **Key**, not into **Value**. Use this only when the current view advertises
 bulk parsing. With strict validation complete and all values inside the safe
 single-quote subset, construct the payload in memory:
@@ -73,8 +79,16 @@ move the visible list, so refresh and scroll to collect the remaining rows.
 Track compared keys in a set instead of relying on row counts in one snapshot.
 Emit only the number compared and any missing key names.
 
-Save the staged changes once, then check the asynchronous result. Once the
-unsaved state clears, navigate away and reopen Environment for the same project.
+Immediately before Save, read fresh destination state and rerun `guard-ui` with
+the intended workspace/project, the freshly observed workspace/project, and
+`--confirm`. Require a successful receipt for the exact target and the configured
+`project-env:<workspace-id>:<owner>/<repository>` allowlist entry. A failed check
+means stop without saving. Navigation or a target change invalidates an earlier
+receipt; never reuse it for another project.
+
+After that check passes, Save the staged changes once, then check the asynchronous
+result. Once the unsaved state clears, navigate away and reopen Environment for
+the same project.
 Collect saved row names across the full scroll range and compare the set with
 the import. Preserve pre-existing keys that were outside its scope. When checking
 exact saved values is supported, compare them privately as well.
