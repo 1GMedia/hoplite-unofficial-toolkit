@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import {
   apiKeySummary,
   authSummary,
+  buildApiCommandRequest,
   buildReadApiRequest,
   buildThreadActionRequest,
   createThreadBodyFromFlags,
+  configuredMutationAllowlist,
   parseBoolean,
   parseCliArgs,
   redactText,
@@ -22,7 +24,10 @@ import {
   summarizeTimeline,
   summarizeApiResponse,
   validateMutationPath,
+  run,
+  runApiCommand,
 } from './index';
+import { HopliteApiClient } from './api-client';
 
 const TEST_THREAD_IDS = ['thr_testalpha123', 'thr_testbeta456'] as const;
 const TEST_ALLOWLIST = new Set<string>(TEST_THREAD_IDS);
@@ -149,18 +154,105 @@ describe('hoplite-cli', () => {
   test('requires an explicit idempotency key before creating a task', () => {
     expect(() => createThreadBodyFromFlags(['prj_abc', 'Do', 'the', 'work'], new Map([
       ['confirm', 'true'],
-    ]))).toThrow('client-operation-id');
+    ]), new Set(['project:prj_abc']))).toThrow('client-operation-id');
     expect(createThreadBodyFromFlags(['prj_abc'], new Map([
       ['confirm', 'true'],
       ['prompt', 'Do the work'],
       ['client-operation-id', 'create-001'],
       ['model', 'gpt-5.6-terra'],
-    ]))).toEqual({
+    ]), new Set(['project:prj_abc']))).toEqual({
       projectId: 'prj_abc',
       prompt: 'Do the work',
       clientOperationId: 'create-001',
       model: 'gpt-5.6-terra',
     });
+    expect(() => createThreadBodyFromFlags(['prj_abc'], new Map([
+      ['confirm', 'true'], ['prompt', 'fixture work'], ['client-operation-id', 'fixture-create-001'],
+    ]), TEST_ALLOWLIST)).toThrow('project:<project-id>');
+    expect(configuredMutationAllowlist('fixturethread,project:prj_abc')).toEqual(new Set(['fixturethread', 'project:prj_abc']));
+  });
+
+  test('supports current and legacy IDs while rejecting path syntax', () => {
+    for (const id of ['fixturethread', 'thr_fixture123', 'fixture-thread_123']) {
+      expect(buildReadApiRequest('thread-active-run', [id], new Map()).path).toBe(`/api/threads/${id}/active-run`);
+      expect(validateMutationPath(`/api/threads/${id}/messages`, id, new Set([id]))).toContain(id);
+    }
+    for (const id of ['../fixture', 'fixture/other', '.', 'fixture?x=1', 'fixture%2fother', 'x'.repeat(513)]) {
+      expect(() => buildReadApiRequest('thread-active-run', [id], new Map())).toThrow('thread id');
+    }
+  });
+
+  test('builds authoritative run reads with bounded pagination', () => {
+    expect(buildReadApiRequest('thread-runs', ['fixturethread'], new Map([['limit', '5'], ['cursor', 'fixture-cursor']]))).toEqual({
+      method: 'GET', path: '/api/threads/fixturethread/runs', query: { limit: 5, cursor: 'fixture-cursor' },
+    });
+    expect(buildReadApiRequest('thread-run-state', ['fixturethread'], new Map([['run-id', 'fixture-run']]))).toEqual({
+      method: 'GET', path: '/api/threads/fixturethread/run-state', query: { runId: 'fixture-run' },
+    });
+    expect(() => buildReadApiRequest('thread-runs', ['fixturethread'], new Map([['limit', '101']]))).toThrow();
+  });
+
+  test('maps direct API queries and rejects unsupported transport commands offline', async () => {
+    expect(buildApiCommandRequest(parseCliArgs(['threads', '--query', 'fixture', '--limit', '3']))).toEqual({
+      method: 'GET', path: '/api/threads', query: { q: 'fixture', archived: false, limit: 3 },
+    });
+    await expect(run(['status', '--transport', 'api'])).rejects.toThrow('does not support');
+    await expect(run(['threads', '--transport', 'unknown'])).rejects.toThrow('Transport');
+    await expect(run(['api', '--method', 'POST', '--confirm'])).rejects.toThrow('GET/HEAD-only');
+  });
+
+  test('bounds generic API metadata and redacts header and body credential echoes', async () => {
+    const keys = ['HOPLITE_API_KEY', 'HOPLITE_API_BASE_URL', 'HOPLITE_MUTATION_ALLOWLIST'] as const;
+    const previous = keys.map(key => process.env[key]);
+    const key = 'fixture_api_key_123456789';
+    const fetcher = spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      operationId: key, id: key,
+    }, { headers: { 'x-request-id': key + 'x'.repeat(5000) } }));
+    try {
+      process.env.HOPLITE_API_KEY = key;
+      process.env.HOPLITE_API_BASE_URL = 'https://fixture.invalid';
+      process.env.HOPLITE_MUTATION_ALLOWLIST = 'fixturethread';
+      const result = await run(['api', '--path', '/api/threads/fixturethread/messages']);
+      expect(JSON.stringify(result)).not.toContain(key);
+      expect(String(result.requestId).length).toBeLessThanOrEqual(4000);
+      expect(result.operationId).toBe('[redacted]');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      fetcher.mockRestore();
+      keys.forEach((key, index) => {
+        if (previous[index] === undefined) delete process.env[key];
+        else process.env[key] = previous[index];
+      });
+    }
+  });
+
+  test('sends guarded API writes with matching idempotency and preserves failure receipts', async () => {
+    const previous = process.env.HOPLITE_MUTATION_ALLOWLIST;
+    process.env.HOPLITE_MUTATION_ALLOWLIST = 'fixturethread,project:fixtureproject';
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const client = new HopliteApiClient({ key: 'fixture_api_key_123456789', baseUrl: 'https://fixture.invalid' }, async (url, init) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ ok: false, error: 'fixture_conflict', secret: 'fixture-hidden', content: 'fixture_api_key_123456789' }, { status: 409 });
+    });
+    try {
+      const message = parseCliArgs(['message', 'fixturethread', '--text', 'fixture work', '--client-operation-id', 'fixture-message-001', '--confirm']);
+      const result = await runApiCommand(message, client, ['fixture_api_key_123456789']);
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(409);
+      expect(JSON.stringify(result)).not.toContain('fixture-hidden');
+      expect(JSON.stringify(result)).not.toContain('fixture_api_key_123456789');
+      expect(new Headers(requests[0]!.init?.headers).get('Idempotency-Key')).toBe('fixture-message-001');
+      expect(JSON.parse(String(requests[0]!.init?.body))).toEqual({ content: 'fixture work', clientMessageId: 'fixture-message-001' });
+      const creation = buildApiCommandRequest(parseCliArgs(['create-thread', 'fixtureproject', '--prompt', 'fixture work', '--client-operation-id', 'fixture-create-001', '--confirm']));
+      expect(creation.idempotencyKey).toBe('fixture-create-001');
+      expect(() => buildApiCommandRequest(parseCliArgs(['thread-stop', 'fixturethread', '--confirm']))).toThrow('run id');
+      expect(() => buildApiCommandRequest(parseCliArgs(['thread-retry', 'fixturethread', '--confirm', '--client-operation-id', 'x'.repeat(65)]))).toThrow('64');
+      expect(() => buildApiCommandRequest(parseCliArgs(['message', 'fixtureother', '--text', 'fixture', '--confirm']))).toThrow('allowlist');
+      expect(requests).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.HOPLITE_MUTATION_ALLOWLIST;
+      else process.env.HOPLITE_MUTATION_ALLOWLIST = previous;
+    }
   });
 
   test('bounds and redacts nested unofficial API output', () => {
@@ -302,7 +394,7 @@ describe('hoplite-cli', () => {
     }
   });
 
-  test('accepts the native Hoplite credentials file without printing the key', () => {
+  test('accepts an explicitly selected legacy credentials file without printing the key', () => {
     const previous = process.env.HOPLITE_API_KEY;
     const previousCredentialsPath = process.env.HOPLITE_CREDENTIALS_PATH;
     const dir = mkdtempSync(join(tmpdir(), 'hoplite-api-key-file-test-'));

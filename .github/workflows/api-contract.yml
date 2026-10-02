@@ -1,0 +1,23 @@
+name: Public API contract drift
+
+on:
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.4
+      - name: Run offline contract tests
+        run: bun test packages/cli/src/api-contract.test.ts
+      - name: Check the public spec without credentials or writes
+        run: bun scripts/check-api-contract.ts --live

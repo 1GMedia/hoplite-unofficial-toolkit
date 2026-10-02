@@ -10,5 +10,5 @@
     "target": "ES2022",
     "types": ["bun"]
   },
-  "include": ["packages/**/*.ts", "skills/**/*.ts"]
+  "include": ["packages/**/*.ts", "skills/**/*.ts", "scripts/**/*.ts"]
 }

@@ -2,6 +2,10 @@
 
 Assessment date: 2026-08-24.
 
+This is a historical reconstruction record. Current route classification and
+the 2026-10-02 public-contract review are in `compatibility.md`; several formerly
+internal operations are now documented public APIs.
+
 ## Scope
 
 The reconstruction used only public Hoplite documentation, the published

@@ -9,11 +9,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { hopliteConfigPath, loadApiCredential } from './api-auth';
+import { HopliteApiClient, type ApiRequest } from './api-client';
 
 type JsonObject = Record<string, unknown>;
 
@@ -31,12 +32,6 @@ type OAuthState = {
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-type ApiCredential = {
-  apiKey?: string;
-  baseUrl?: string;
-  orgId?: string;
-};
-
 type ParsedArgs = {
   command: string;
   positionals: string[];
@@ -49,14 +44,11 @@ type TimelineMessage = {
   createdAt?: string;
 };
 
-const DEFAULT_TOKEN_PATH = join(homedir(), '.config', 'hoplite', 'mcp-oauth.json');
-const DEFAULT_CREDENTIALS_PATH = join(homedir(), '.config', 'hoplite', 'credentials.json');
 const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_API_BASE_URL = 'https://api.hoplite.sh';
 // Refresh early so a delayed command or short outage cannot carry an expired
 // access token into an MCP connection.
 const OAUTH_REFRESH_WINDOW_MS = 10 * 60_000;
-const THREAD_ID_RE = /^thr_[A-Za-z0-9]+$/;
+const THREAD_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,511}$/;
 const ALLOWED_THREAD_STATUSES = new Set([
   'queued',
   'running',
@@ -73,6 +65,9 @@ const THREAD_READ_COMMANDS = new Set([
   'thread-pr-status',
   'thread-pr-comments',
   'thread-preview-checklist',
+  'thread-runs',
+  'thread-run-state',
+  'thread-active-run',
 ]);
 const THREAD_ACTION_COMMANDS = new Set([
   'thread-stop',
@@ -202,7 +197,15 @@ export function configuredMutationAllowlist(
 ): Set<string> {
   const values = raw.split(/[\s,]+/).map(value => value.trim()).filter(Boolean);
   const allowlist = new Set<string>();
-  for (const value of values) allowlist.add(validatedThreadId(value));
+  for (const value of values) {
+    if (value.startsWith('project:')) {
+      const projectId = value.slice('project:'.length);
+      if (!THREAD_ID_RE.test(projectId)) throw new Error('Invalid project creation allowlist entry');
+      allowlist.add(value);
+    } else {
+      allowlist.add(validatedThreadId(value));
+    }
+  }
   return allowlist;
 }
 
@@ -230,7 +233,7 @@ function parseBoundedInteger(
 }
 
 function tokenPath(): string {
-  return process.env.HOPLITE_OAUTH_PATH || DEFAULT_TOKEN_PATH;
+  return process.env.HOPLITE_OAUTH_PATH || hopliteConfigPath('mcp-oauth.json');
 }
 
 function readOAuthState(path: string): OAuthState {
@@ -376,41 +379,6 @@ export function authSummary(path = tokenPath(), now = Date.now()): JsonObject {
   };
 }
 
-function credentialsPath(): string {
-  return process.env.HOPLITE_CREDENTIALS_PATH || DEFAULT_CREDENTIALS_PATH;
-}
-
-function loadApiCredential(): { key: string; baseUrl: string; source: string; orgId?: string } {
-  const fromEnv = process.env.HOPLITE_API_KEY?.trim();
-  if (fromEnv) {
-    return {
-      key: fromEnv,
-      baseUrl: process.env.HOPLITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL,
-      source: 'HOPLITE_API_KEY environment variable',
-      orgId: process.env.HOPLITE_ORG_ID?.trim() || undefined,
-    };
-  }
-
-  const path = credentialsPath();
-  if (!existsSync(path)) throw new Error('HOPLITE_API_KEY is not set and Hoplite credentials file is missing');
-  const mode = statSync(path).mode & 0o777;
-  if ((mode & 0o077) !== 0) throw new Error('Hoplite credentials file permissions must be 600 or stricter');
-  let parsed: { credentials?: ApiCredential[] };
-  try {
-    parsed = JSON.parse(readFileSync(path, 'utf8')) as { credentials?: ApiCredential[] };
-  } catch {
-    throw new Error('Hoplite credentials file is not valid JSON');
-  }
-  const credential = parsed.credentials?.find(item => item.apiKey && item.baseUrl) ?? parsed.credentials?.find(item => item.apiKey);
-  if (!credential?.apiKey) throw new Error('Hoplite credentials file has no API key');
-  return {
-    key: credential.apiKey,
-    baseUrl: process.env.HOPLITE_API_BASE_URL?.trim() || credential.baseUrl || DEFAULT_API_BASE_URL,
-    source: `Hoplite credentials file (${path})`,
-    orgId: process.env.HOPLITE_ORG_ID?.trim() || (credential as ApiCredential).orgId,
-  };
-}
-
 export function apiKeySummary(): JsonObject {
   try {
     const credential = loadApiCredential();
@@ -420,6 +388,7 @@ export function apiKeySummary(): JsonObject {
       source: credential.source,
       keyPresent: true,
       permissionsSafe: true,
+      verifiedWithServer: false,
       recovery: null,
     };
   } catch (error) {
@@ -540,11 +509,16 @@ function validatedClientOperationId(
   return normalized;
 }
 
-export function sanitizeOutput(value: unknown, depth = 0): unknown {
+export function sanitizeOutput(value: unknown, depth = 0, secrets: readonly string[] = []): unknown {
   if (depth > 6) return '[truncated]';
-  if (typeof value === 'string') return redactText(value).slice(0, 4_000);
+  if (typeof value === 'string') {
+    for (const secret of secrets) {
+      if (secret) value = (value as string).split(secret).join('[redacted]');
+    }
+    return redactText(value as string).slice(0, 4_000);
+  }
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
-  if (Array.isArray(value)) return value.slice(0, 100).map(item => sanitizeOutput(item, depth + 1));
+  if (Array.isArray(value)) return value.slice(0, 100).map(item => sanitizeOutput(item, depth + 1, secrets));
   if (!value || typeof value !== 'object') return null;
 
   const result: JsonObject = {};
@@ -553,7 +527,7 @@ export function sanitizeOutput(value: unknown, depth = 0): unknown {
       result[key] = '[redacted]';
       continue;
     }
-    result[key] = sanitizeOutput(nested, depth + 1);
+    result[key] = sanitizeOutput(nested, depth + 1, secrets);
   }
   return result;
 }
@@ -589,6 +563,16 @@ export function buildReadApiRequest(
     if (flags.get('cursor')) query.cursor = validatedOpaqueId(flags.get('cursor'), 'message cursor');
     return { method: 'GET', path: `/api/threads/${threadId}/messages`, query };
   }
+  if (command === 'thread-runs') {
+    const query: JsonObject = { limit: parseBoundedInteger(flags.get('limit'), 100, 1, 100) };
+    if (flags.get('cursor')) query.cursor = validatedOpaqueId(flags.get('cursor'), 'run cursor');
+    return { method: 'GET', path: `/api/threads/${threadId}/runs`, query };
+  }
+  if (command === 'thread-run-state') {
+    const query: JsonObject = {};
+    if (flags.get('run-id')) query.runId = validatedOpaqueId(flags.get('run-id'), 'run id');
+    return { method: 'GET', path: `/api/threads/${threadId}/run-state`, query };
+  }
 
   const suffixByCommand: Record<string, string> = {
     'thread-capability': 'execution-capability',
@@ -596,6 +580,9 @@ export function buildReadApiRequest(
     'thread-pr-status': 'pr/status',
     'thread-pr-comments': 'pr/comments',
     'thread-preview-checklist': 'preview-checklist',
+    'thread-runs': 'runs',
+    'thread-run-state': 'run-state',
+    'thread-active-run': 'active-run',
   };
   return { method: 'GET', path: `/api/threads/${threadId}/${suffixByCommand[command]}` };
 }
@@ -610,7 +597,7 @@ export function buildThreadActionRequest(
   requireConfirmation(flags, 'POST');
   const threadId = validatedThreadId(positionals[0]);
   requireAllowlistedThread(threadId, allowlist);
-  const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'));
+  const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'), 64);
   const actionByCommand: Record<string, string> = {
     'thread-stop': 'stop',
     'thread-retry': 'retry',
@@ -634,6 +621,7 @@ export function buildThreadActionRequest(
 export function createThreadBodyFromFlags(
   positionals: string[],
   flags: Map<string, string>,
+  allowlist = configuredMutationAllowlist(),
 ): JsonObject {
   requireConfirmation(flags, 'POST');
   const projectId = validatedOpaqueId(positionals[0] ?? flags.get('project'), 'project id');
@@ -641,6 +629,9 @@ export function createThreadBodyFromFlags(
   if (!prompt) throw new Error('A non-empty thread prompt is required via --prompt, --text, or trailing arguments');
   if (prompt.length > 100_000) throw new Error('Thread prompt exceeds 100 KB');
   const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'), 64, true);
+  if (!THREAD_ID_RE.test(projectId) || !allowlist.has(`project:${projectId}`)) {
+    throw new Error('Creation requires an exact project:<project-id> entry in HOPLITE_MUTATION_ALLOWLIST');
+  }
   const body: JsonObject = { projectId, prompt, clientOperationId };
   const model = flags.get('model')?.trim();
   const title = flags.get('title')?.trim();
@@ -666,7 +657,7 @@ export function validateMutationPath(
 ): string {
   if (!path.startsWith('/')) throw new Error('API path must be absolute and start with /');
   if (!path.startsWith('/api/')) throw new Error('API path must stay under /api/');
-  const match = path.match(/^\/api\/threads\/(thr_[A-Za-z0-9]+)(?:\/|$)/);
+  const match = path.match(/^\/api\/threads\/([A-Za-z0-9][A-Za-z0-9_-]{0,511})(?:\/|$)/);
   const pathThreadId = match?.[1];
   const selectedThreadId = threadId ? validatedThreadId(threadId) : pathThreadId;
   if (!selectedThreadId) throw new Error('API path must target a Hoplite thread');
@@ -678,14 +669,6 @@ export function validateMutationPath(
     throw new Error('The --thread id does not match the thread id in --path');
   }
   return path;
-}
-
-function apiBaseUrl(value: string): string {
-  const parsed = new URL(value);
-  if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-    throw new Error('HOPLITE_API_BASE_URL must use HTTPS');
-  }
-  return parsed.origin;
 }
 
 function bodyFromFlags(flags: Map<string, string>): JsonObject | unknown[] | string | number | boolean | null | undefined {
@@ -727,7 +710,7 @@ async function sendMessage(
   const response = await callTool(client, 'hoplite_call_api', {
     method: 'POST',
     path: `/api/threads/${threadId}/messages`,
-    body: { content, clientOperationId },
+    body: { content, clientMessageId: clientOperationId },
   });
   const body = response.body && typeof response.body === 'object'
     ? response.body as JsonObject
@@ -866,42 +849,71 @@ export function summarizeApiResponse(raw: string, key: string): JsonObject {
 
 async function directApiRequest(flags: Map<string, string>): Promise<JsonObject> {
   const method = (flags.get('method') || 'GET').toUpperCase();
-  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(method)) {
-    throw new Error(`Unsupported API method: ${method}`);
+  if (method !== 'GET' && method !== 'HEAD') {
+    throw new Error('Generic API access is GET/HEAD-only; use a dedicated guarded command for writes');
   }
-  requireConfirmation(flags, method);
   const path = validateMutationPath(flags.get('path') ?? '', flags.get('thread'));
   const body = bodyFromFlags(flags);
-  if (['GET', 'HEAD', 'DELETE'].includes(method) && body !== undefined) {
+  if (body !== undefined) {
     throw new Error(`${method} requests cannot include --body-json or --body-file`);
   }
-
   const credential = loadApiCredential();
-  const key = credential.key;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  try {
-      const response = await fetch(`${apiBaseUrl(credential.baseUrl)}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${key}`,
-        ...(credential.orgId ? { 'x-hoplite-org-id': credential.orgId } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const raw = await response.text();
-    return {
-      status: response.status,
-      ok: response.ok,
-      path,
-      method,
-      body: summarizeApiResponse(raw, key),
+  const response = await new HopliteApiClient(credential).request({ method, path });
+  const safe = sanitizeOutput(response, 0, [credential.key]) as typeof response;
+  return { ...safe, path, method, body: sanitizeOutput(summarizeApiResponse(JSON.stringify(response.body), credential.key), 0, [credential.key]) };
+}
+
+export function buildApiCommandRequest(parsed: ParsedArgs): ApiRequest {
+  const { command, positionals, flags } = parsed;
+  if (command === 'projects') return { method: 'GET', path: '/api/projects' };
+  if (command === 'threads') {
+    const status = flags.get('status');
+    if (status && !ALLOWED_THREAD_STATUSES.has(status)) throw new Error(`Unsupported thread status: ${status}`);
+    const query: JsonObject = {
+      limit: parseBoundedInteger(flags.get('limit'), 100, 1, 100),
+      archived: parseBoolean(flags.get('archived'), false),
     };
-  } finally {
-    clearTimeout(timer);
+    if (status) query.status = status;
+    if (flags.get('project')) query.projectId = validatedOpaqueId(flags.get('project'), 'project id');
+    if (flags.get('query')) query.q = flags.get('query');
+    if (flags.get('cursor')) query.cursor = validatedOpaqueId(flags.get('cursor'), 'thread cursor');
+    return { method: 'GET', path: '/api/threads', query };
   }
+  if (command === 'create-thread') {
+    const body = createThreadBodyFromFlags(positionals, flags);
+    return { method: 'POST', path: '/api/threads', body, idempotencyKey: String(body.clientOperationId) };
+  }
+  if (command === 'message') {
+    requireConfirmation(flags, 'POST');
+    const content = messageTextFromFlags(positionals, flags);
+    const threadId = validatedThreadId(positionals[0]);
+    const idempotencyKey = validatedClientOperationId(flags.get('client-operation-id'));
+    return { method: 'POST', path: `/api/threads/${threadId}/messages`,
+      body: { content, clientMessageId: idempotencyKey }, idempotencyKey };
+  }
+  if (['thread-stop', 'thread-retry', 'thread-compact'].includes(command)) {
+    const request = buildThreadActionRequest(command, positionals, flags);
+    return { method: 'POST', path: String(request.path), body: request.body,
+      idempotencyKey: String(request.clientOperationId) };
+  }
+  if (['repositories', 'branches', 'repo-inspect', 'project', 'messages', 'thread-usage',
+    'thread-pr-status', 'thread-pr-comments', 'thread-runs', 'thread-run-state', 'thread-active-run'].includes(command)) {
+    return buildReadApiRequest(command, positionals, flags) as ApiRequest;
+  }
+  throw new Error(`API transport does not support ${command}; use the default MCP transport`);
+}
+
+async function executeApiCommandRequest(request: ApiRequest, client: HopliteApiClient, secrets: readonly string[] = []): Promise<JsonObject> {
+  const response = await client.request(request);
+  const safe = sanitizeOutput(response, 0, secrets) as typeof response;
+  return {
+    checkedAt: new Date().toISOString(), transport: 'api', method: request.method,
+    path: request.path, ...safe, clientOperationId: request.idempotencyKey ?? null,
+  };
+}
+
+export async function runApiCommand(parsed: ParsedArgs, client: HopliteApiClient, secrets: readonly string[] = []): Promise<JsonObject> {
+  return executeApiCommandRequest(buildApiCommandRequest(parsed), client, secrets);
 }
 
 function compactMessage(message: TimelineMessage | undefined, limit = 1_400): JsonObject | null {
@@ -1043,18 +1055,22 @@ function help(): JsonObject {
       'thread-pr-status': 'Read pull-request status for one task',
       'thread-pr-comments': 'Read bounded pull-request comments for one task',
       'thread-preview-checklist': 'Read the preview verification checklist for one task',
+      'thread-runs': 'Read bounded run history; supports --limit and --cursor',
+      'thread-run-state': 'Read authoritative run state; --run-id selects a specific run',
+      'thread-active-run': 'Read the current active run identity',
       'thread-stop': 'Stop one explicit run on an allowlisted task; requires --run-id and --confirm',
       'thread-retry': 'Retry an allowlisted task; requires --confirm',
       'thread-compact': 'Compact an allowlisted task context; requires --confirm',
       'thread-auto-title': 'Regenerate an allowlisted task title; requires --confirm',
       models: 'List current Hoplite model providers',
       tools: 'List live Hoplite MCP tool schemas',
-      api: 'Call one explicitly supplied API route for one allowlisted thread; direct API mutations require HOPLITE_API_KEY and --confirm',
-      'api-auth': 'Check whether HOPLITE_API_KEY is present without printing it',
+      api: 'GET/HEAD one explicitly supplied API route for one allowlisted thread; generic writes are disabled',
+      'api-auth': 'Check local API-key configuration without contacting the server or printing secrets',
       message: 'Send a message to one allowlisted existing thread through the authenticated MCP session; requires --confirm',
     },
     apiAuth: 'Set HOPLITE_API_KEY in the environment; never put keys in source, prompts, or logs',
-    mutationAllowlist: 'Set HOPLITE_MUTATION_ALLOWLIST to a comma-separated list of thread ids; mutations are disabled when empty',
+    mutationAllowlist: 'Set HOPLITE_MUTATION_ALLOWLIST to exact thread IDs; creation requires project:<project-id>',
+    transport: 'Default mcp; use --transport api with HOPLITE_API_KEY for documented dedicated commands',
     recovery: 'Run `hoplite mcp start` when OAuth is missing or expired',
   };
 }
@@ -1068,6 +1084,13 @@ export async function run(argv: string[]): Promise<JsonObject> {
   if (parsed.command === 'api-auth') return apiKeySummary();
 
   if (parsed.command === 'api') return directApiRequest(parsed.flags);
+  const transport = parsed.flags.get('transport') ?? 'mcp';
+  if (transport !== 'mcp' && transport !== 'api') throw new Error('Transport must be mcp or api');
+  if (transport === 'api') {
+    const request = buildApiCommandRequest(parsed);
+    const credential = loadApiCredential();
+    return executeApiCommandRequest(request, new HopliteApiClient(credential), [credential.key]);
+  }
 
   return withClient(async client => {
     switch (parsed.command) {
@@ -1085,6 +1108,9 @@ export async function run(argv: string[]): Promise<JsonObject> {
       case 'thread-pr-status':
       case 'thread-pr-comments':
       case 'thread-preview-checklist':
+      case 'thread-runs':
+      case 'thread-run-state':
+      case 'thread-active-run':
         return runReadApiCommand(client, parsed.command, parsed.positionals, parsed.flags);
       case 'thread-stop':
       case 'thread-retry':
@@ -1140,6 +1166,7 @@ if (import.meta.main) {
   run(process.argv.slice(2))
     .then(result => {
       console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+      if (result.ok === false) process.exitCode = 1;
     })
     .catch(error => {
       console.error(JSON.stringify({ ok: false, error: safeErrorMessage(error) }, null, 2));

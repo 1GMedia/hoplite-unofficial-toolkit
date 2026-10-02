@@ -15,8 +15,51 @@ notice.
   the CLI safely.
 - `docs` — route classification and the public-artifact reconstruction record.
 
-This is a toolkit, not a complete SDK. The reusable client layer can be split
-from the CLI if a stable programmatic API becomes useful.
+This is a toolkit, not a complete SDK. The internal typed API transport is
+separate from CLI policy; it is not a standalone authorization layer.
+
+## Use alongside the official CLI
+
+Use official `hoplite` for interactive coding, `ask`, sandbox shells, local-change
+push, handoff, and ACP. Use this companion for bounded operational reads and
+guarded actions. It does not replace the official terminal experience. The
+distinct `bun run hoplite-toolkit -- ...` alias avoids command-name confusion;
+the existing `bun run hoplite -- ...` alias remains supported. Official `status`
+reports local CLI configuration; toolkit `status` scans tasks.
+
+The existing MCP transport remains the default. Dedicated documented commands
+can instead use `--transport api` with an explicitly configured API key:
+
+```bash
+# Inject HOPLITE_API_KEY through your local secret manager or CI secret settings.
+bun run hoplite-toolkit -- api-auth
+bun run hoplite-toolkit -- projects --transport api
+bun run hoplite-toolkit -- threads --transport api --limit 20
+bun run hoplite-toolkit -- thread-active-run fixturethread --transport api
+bun run hoplite-toolkit -- thread-run-state fixturethread --transport api --run-id fixture-run
+bun run hoplite-toolkit -- thread-runs fixturethread --transport api --limit 10
+```
+
+API transport supports `projects`, `threads`, `project`, `repositories`,
+`branches`, `repo-inspect`, `messages`, the three run reads above, `thread-usage`,
+`thread-pr-status`, `thread-pr-comments`, `create-thread`, `message`,
+`thread-stop`, `thread-retry`, and `thread-compact`. Other commands remain MCP-only;
+there is no silent fallback. API output uses a bounded, redacted envelope with
+HTTP status and operation/request IDs when supplied by the server. An HTTP
+failure returns `ok: false` and a nonzero process exit status. A successful
+write is still only acceptance, not agent completion.
+
+`api-auth` checks local configuration, not server validity or permissions.
+Official CLI sign-in keys and the macOS Keychain are not read automatically.
+`HOPLITE_CREDENTIALS_PATH` explicitly enables the legacy JSON adapter, requiring
+one key matching the endpoint and optional `HOPLITE_ORG_ID`; ambiguous entries
+fail closed. `HOPLITE_BASE_URL` is supported; the existing
+`HOPLITE_API_BASE_URL` takes precedence. API endpoints must be HTTPS origins.
+MCP OAuth follows `XDG_CONFIG_HOME` or the explicit `HOPLITE_OAUTH_PATH` override.
+Keep official session credentials separate from automation credentials.
+
+See [upstream maintenance](docs/upstream-maintenance.md) for the API drift
+check, intentional updates, and the next stages of the companion roadmap.
 
 ## Use cases
 
@@ -83,7 +126,8 @@ Create a new Hoplite task while supplying a stable operation ID so an ambiguous
 network result can be reconciled safely instead of creating duplicates:
 
 ```bash
-bun run hoplite -- create-thread <project-id> \
+export HOPLITE_MUTATION_ALLOWLIST='project:fixtureproject'
+bun run hoplite -- create-thread fixtureproject \
   --prompt 'Implement the requested change and run the relevant tests' \
   --client-operation-id create-task-20260824-001 \
   --confirm
@@ -119,7 +163,9 @@ output and the appropriate external runtime evidence.
 
 ## Setup
 
-Requirements: Bun, the official Hoplite CLI, and a Hoplite account.
+Requirements: Bun and a Hoplite account. The default MCP workflow also needs
+the official Hoplite CLI for browser authorization; direct API transport uses
+an explicitly configured key instead.
 
 ```bash
 bun install
@@ -158,6 +204,14 @@ export HOPLITE_MUTATION_ALLOWLIST='thr_example1,thr_example2'
 
 Every mutation also requires `--confirm`. Task creation requires an explicit
 idempotency key, and stopping a task requires the exact run ID.
+
+Creation additionally requires `project:<project-id>` in the allowlist, using
+the actual project ID (not the example). Project entries do not authorize
+existing-thread actions. Current unprefixed IDs and legacy `thr_...` IDs are
+accepted; copy the exact ID returned by Hoplite. Generic `api` access is now
+GET/HEAD-only and still restricted to an allowlisted thread; use dedicated
+commands for writes. The API transport sends `Idempotency-Key`, matching the
+body's operation/message ID, and never automatically retries a write.
 
 ```bash
 bun run hoplite -- message thr_example1 \
