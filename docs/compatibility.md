@@ -1,41 +1,54 @@
-# Compatibility routes
+# API and compatibility routes
 
-The toolkit separates reviewed API operations from compatibility operations
-reconstructed from Hoplite's public web client. Compatibility routes can drift
-and should remain fail-closed when their contracts no longer match.
+Reviewed against Hoplite's public [API reference](https://hoplite.sh/docs/api)
+and [OpenAPI specification](https://hoplite.sh/docs/openapi.json) on 2026-10-02.
+Publication is contract evidence, not proof of access for every credential.
 
-## Reviewed operations
+## Documented operations
 
-- Project list, create, and get.
-- Thread list, create, get, and message reads.
+- Project list and get; guarded thread creation (not project creation).
+- Thread list, get, and bounded message reads.
 - Repository list, branch list, and repository inspection.
-- Model-provider discovery and service health.
+- Model-provider discovery (MCP command).
+- Run history, authoritative run state, and active-run identity.
+- Thread usage; pull-request status and comments.
+- Guarded message append, exact-run stop, retry, and context compaction.
 
-The reviewed source is Hoplite's published OpenAPI document:
-`https://hoplite.sh/docs/openapi.json`.
+Dedicated commands can use the default MCP connection or opt into direct API
+transport where documented in the README. `status`, `inspect`, `models`, and
+MCP tool discovery currently remain MCP-only.
 
-## Compatibility reads
+| Action | Method and path | Supported payload | Side effect |
+| --- | --- | --- | --- |
+| Create thread | `POST /api/threads` | `projectId`, `prompt`, `clientOperationId`, optional `model`/`title` | Creates a thread and queues work |
+| Message | `POST /api/threads/{id}/messages` | `content`, `clientMessageId` | Appends a user message and queues work |
+| Stop | `POST /api/threads/{id}/stop` | `runId`, `clientOperationId` | Stops the explicitly identified run |
+| Retry | `POST /api/threads/{id}/retry` | `clientOperationId` | Requests a retry |
+| Compact | `POST /api/threads/{id}/compact` | `clientOperationId` | Requests context compaction |
 
-- Thread execution capability.
-- Usage metadata.
-- Pull-request status and comments.
-- Preview checklist.
+The direct transport sends a matching `Idempotency-Key` header. Existing-thread
+actions require the exact thread allowlist entry and `--confirm`. Creation
+requires an exact `project:<project-id>` entry, `--confirm`, and an explicit
+operation ID. No automatic mutation retries occur; HTTP acceptance is not proof
+of completion. Local API-key checks do not establish authentication remotely.
 
-## Guarded compatibility actions
+## Undocumented compatibility surface (MCP only)
 
-- Append a message: `POST /api/threads/:id/messages`.
-- Stop an exact run: `POST /api/threads/:id/stop`.
-- Retry: `POST /api/threads/:id/retry`.
-- Compact context: `POST /api/threads/:id/compact`.
-- Regenerate a title: `POST /api/threads/:id/title`.
+- `GET /api/threads/:id/execution-capability`.
+- `GET /api/threads/:id/preview-checklist`.
+- `POST /api/threads/:id/title` with `clientOperationId`: regenerates a title;
+  requires an exact thread allowlist and confirmation.
 
-Every action requires an exact locally configured thread allowlist and
-`--confirm`. Stop also requires a run ID. The CLI does not automatically retry
-mutations.
+Caller evidence and reconstruction history remain in
+[reverse-engineering.md](reverse-engineering.md). These routes are not in the
+tracked public OpenAPI subset and may drift without warning. Fail closed if
+their contracts no longer match; do not infer support from similar public routes.
 
-## Intentionally excluded
+## Intentionally not implemented
 
-Archive/update, deletion, checkpoint restoration, PR mutations, terminal and
-log access, attachments, billing, credentials, and workspace recovery are not
-wrapped because their payloads, sensitivity, or side effects need stronger
-evidence and dedicated safety design.
+Some previously excluded surfaces are now public APIs: approvals, workspace
+recovery, diffs/checkpoints, attachments, previews, PR mutations, environment
+variables, service accounts, billing, and automations. Documentation alone does
+not authorize adding them without their own policy, payload validation, secret
+handling, and fixture tests. Terminal/log access also remains outside the
+toolkit. Generic `api` writes are disabled so they cannot bypass those designs.

@@ -8,6 +8,12 @@ description: Inspect and operate Hoplite tasks through the unofficial guarded CL
 Use the bundled wrapper instead of browser automation when its MCP/API surface
 covers the request.
 
+Use the official CLI for interactive sessions, sandbox shell/exec, handoff,
+push, and ACP. This skill is the operational companion, not a replacement.
+Dedicated documented commands can opt into `--transport api` with an injected
+`HOPLITE_API_KEY`; MCP remains the default. Never scrape official credential
+storage or copy Keychain keys. `api-auth` is a local check, not server validation.
+
 ## Authentication
 
 Never print, copy, upload, or commit OAuth/API credentials. Check the stored
@@ -56,6 +62,15 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts message \
 `thread-stop` additionally requires the exact current run ID. Task creation
 requires an explicit idempotency key. Do not retry a mutation with a different
 operation ID when the first result is ambiguous.
+
+Creation also requires `project:<project-id>` in the mutation allowlist. That
+entry grants creation only, not actions on existing threads. Use exact IDs from
+read results; both current unprefixed and legacy `thr_...` IDs are accepted.
+Generic `api` is GET/HEAD-only; it cannot be used to bypass dedicated guards.
+
+Use `thread-active-run` to identify a current run, `thread-run-state --run-id ID`
+for authoritative state, and bounded `thread-runs --limit N` for history.
+Do not equate a run state or accepted write with verified downstream outcomes.
 
 Do not guess undocumented routes or payloads. Archive/update, delete,
 checkpoint restore, PR mutations, terminal/log access, attachments, billing,
