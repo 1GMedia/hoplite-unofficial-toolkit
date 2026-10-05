@@ -1,8 +1,12 @@
 # API and compatibility routes
 
 Reviewed against Hoplite's public [API reference](https://hoplite.sh/docs/api)
-and [OpenAPI specification](https://hoplite.sh/docs/openapi.json) on 2026-10-02.
+and [OpenAPI specification](https://hoplite.sh/docs/openapi.json) on 2026-10-05.
 Publication is contract evidence, not proof of access for every credential.
+All 20 tracked operations still match the existing pin. See the
+[API support matrix](api.md) for transport-specific command coverage,
+[MCP guide](mcp-server.md) for upstream prose/schema differences, and
+[ACP guide](acp.md) for the separate session protocol we do not implement.
 
 ## Documented operations
 

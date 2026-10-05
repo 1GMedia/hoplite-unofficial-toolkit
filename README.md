@@ -18,6 +18,24 @@ notice.
 This is a toolkit, not a complete SDK. The internal typed API transport is
 separate from CLI policy; it is not a standalone authorization layer.
 
+## Documentation and current upstream support
+
+Reviewed against [Hoplite's documentation](https://hoplite.sh/docs) on
+**2026-10-05**. Choose an interface before configuring credentials or sending work:
+
+| Interface | Use it for | Local guide |
+| --- | --- | --- |
+| Official CLI | Interactive coding, scripted `ask`, shells, push and handoff | [CLI setup and migration](docs/official-cli.md) |
+| ACP | Local editor bridge or a custom remote session client | [ACP integration](docs/acp.md) |
+| MCP | Let an external agent drive Hoplite using hosted tools | [MCP setup and safety](docs/mcp-server.md) |
+| Direct API | Structured automation with explicit keys and guarded operations | [API support matrix](docs/api.md) |
+
+These guides distinguish upstream capabilities from implemented toolkit
+commands. The toolkit does not implement ACP or proxy the official CLI, and
+its local mutation policy does not protect calls made outside this toolkit.
+All 20 tracked public API operations still match the pinned contract; the
+current documentation review did not require an API snapshot change.
+
 ## Use alongside the official CLI
 
 Use official `hoplite` for interactive coding, `ask`, sandbox shells, local-change
@@ -65,12 +83,17 @@ check, intentional updates, and the next stages of the companion roadmap.
 
 ### Check authentication before an operation
 
-Confirm that the local OAuth session exists, has safe file permissions, and is
-still refreshable without displaying credential values:
+Check that the local OAuth file exists, has safe permissions, and has an
+unexpired token without displaying credential values. This local check does
+not contact the server or prove that refresh will succeed:
 
 ```bash
 bun run hoplite -- auth
 ```
+
+Actual MCP commands attempt refresh when needed. See the
+[authentication boundaries](docs/mcp-server.md#authentication-choices) before
+switching between official CLI sign-in, MCP OAuth, and direct API keys.
 
 ### Inventory projects and active tasks
 

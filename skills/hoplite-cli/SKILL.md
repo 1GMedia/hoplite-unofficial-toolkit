@@ -14,6 +14,23 @@ Dedicated documented commands can opt into `--transport api` with an injected
 `HOPLITE_API_KEY`; MCP remains the default. Never scrape official credential
 storage or copy Keychain keys. `api-auth` is a local check, not server validation.
 
+## Choose the interface
+
+Reviewed against official docs on 2026-10-05. Read the repository guides when
+configuring an integration:
+
+- [Official CLI](../../docs/official-cli.md): session sign-in and scripted `ask`.
+- [ACP](../../docs/acp.md): official local editor bridge or remote session API;
+  this toolkit does not implement an ACP transport.
+- [MCP](../../docs/mcp-server.md): external-client OAuth/API-key setup. This
+  toolkit's own MCP transport currently uses OAuth only.
+- [API](../../docs/api.md): implemented direct-API commands and upstream-only
+  capabilities; the Platform API is a separate unsupported surface.
+
+Our allowlists and confirmation flags apply only inside this toolkit. Never
+switch to the official CLI, ACP, or raw MCP tools to bypass a refused action.
+Do not infer capability support merely because upstream documents it.
+
 ## Authentication
 
 Never print, copy, upload, or commit OAuth/API credentials. Check the stored
@@ -22,6 +39,9 @@ OAuth state without exposing tokens:
 ```bash
 bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts auth
 ```
+
+This inspects local expiry/permissions only; it does not refresh or verify the
+session remotely. Normal MCP commands attempt OAuth refresh when needed.
 
 If authentication is missing, expired, or cannot refresh, ask the operator to
 run the official interactive flow:
