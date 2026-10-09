@@ -1,4 +1,4 @@
-name: Public API contract drift
+name: Upstream drift
 
 on:
   schedule:
@@ -8,16 +8,82 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: false
+
 jobs:
-  check:
+  contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.4
-      - name: Run offline contract tests
-        run: bun test packages/cli/src/api-contract.test.ts
-      - name: Check the public spec without credentials or writes
+      - run: bun test packages/cli/src/api-contract.test.ts
+      - name: Check reviewed contract pin (never auto-refresh)
         run: bun scripts/check-api-contract.ts --live
+
+  snapshot:
+    # Do not give manually selected feature-branch code write credentials.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # Required to push the snapshot-only proposal branch.
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Run offline collector tests
+        run: bun test packages/cli/src/upstream-drift.test.ts
+      - name: Collect hashes without invoking Hoplite tools
+        id: collect
+        env:
+          HOPLITE_DRIFT_MCP_KEY: ${{ secrets.HOPLITE_DRIFT_MCP_KEY }}
+        run: bun scripts/check-upstream-drift.ts --live --write
+      - name: Propose snapshot refresh (draft only)
+        if: steps.collect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.collect.outputs.fingerprint }}
+          BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$FINGERPRINT" =~ ^[a-f0-9]{64}$ ]]
+          branch="automation/upstream-drift-$FINGERPRINT"
+          title="Upstream drift $FINGERPRINT"
+          label="upstream-drift"
+          gh label create "$label" --color D4C5F9 --description "Review upstream contract and documentation changes" --force
+          # Include closed issues/PRs: respect a maintainer's dismissal of a fingerprint.
+          issues=$(gh issue list --state all --label "$label" --search "$FINGERPRINT in:title" --json number --jq length)
+          if [ "$issues" = 0 ]; then
+            gh issue create --title "$title" --label "$label" --body-file upstream-drift-summary.md
+          fi
+          prs=$(gh pr list --state all --head "$branch" --json number --jq length)
+          if [ "$prs" != 0 ]; then
+            echo "Proposal already exists; leaving its draft/review state untouched."
+            exit 0
+          fi
+          gh auth setup-git
+          remote=$(git ls-remote --heads origin "refs/heads/$branch")
+          if [ -z "$remote" ]; then
+            git switch -c "$branch"
+            git add -- docs/upstream-snapshot.json
+            git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Refresh upstream snapshot hashes"
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+          gh pr create --draft --base "$BASE_BRANCH" --head "$branch" --title "$title" --label "$label" --body-file upstream-drift-summary.md

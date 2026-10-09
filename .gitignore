@@ -7,3 +7,4 @@ dist/
 *.log
 credentials.json
 mcp-oauth.json
+upstream-drift-summary.md
