@@ -201,6 +201,37 @@ describe('hoplite-cli', () => {
     await expect(run(['api', '--method', 'POST', '--confirm'])).rejects.toThrow('GET/HEAD-only');
   });
 
+  test('PR status preserves empty merge methods and optional merge queue requirements offline', async () => {
+    for (const mergeQueueRequired of [true, false, undefined]) {
+      const pullRequestStatus = {
+        number: 123, url: 'https://fixture.invalid/pull/123',
+        repoFullName: 'fixture/repository', state: 'open', allowedMergeMethods: [],
+        ...(mergeQueueRequired === undefined ? {} : { mergeQueueRequired }),
+      };
+      let calls = 0;
+      const client = new HopliteApiClient({ key: 'fixture-key', baseUrl: 'https://fixture.invalid' }, async (url, init) => {
+        calls++;
+        expect(String(url)).toBe('https://fixture.invalid/api/threads/fixturethread/pr/status');
+        expect(init?.method).toBe('GET');
+        expect(init?.body).toBeUndefined();
+        return Response.json({ ok: true, pullRequestStatus });
+      });
+      const parsed = parseCliArgs(['thread-pr-status', 'fixturethread', '--transport', 'api']);
+      const request = { method: 'GET' as const, path: '/api/threads/fixturethread/pr/status' };
+      expect(buildApiCommandRequest(parsed)).toEqual(request);
+      expect(buildReadApiRequest('thread-pr-status', ['fixturethread'], new Map())).toEqual(request);
+      const result = await runApiCommand(parsed, client);
+      expect(result.ok).toBe(true);
+      expect(result.body).toEqual(sanitizeOutput({ ok: true, pullRequestStatus }));
+      expect((result.body as { pullRequestStatus: unknown }).pullRequestStatus).toMatchObject({ allowedMergeMethods: [] });
+      const status = (result.body as { pullRequestStatus: Record<string, unknown> }).pullRequestStatus;
+      if (mergeQueueRequired === undefined) expect(status).not.toHaveProperty('mergeQueueRequired');
+      else expect(status.mergeQueueRequired).toBe(mergeQueueRequired);
+      expect(JSON.stringify(result)).not.toContain('https://fixture.invalid');
+      expect(calls).toBe(1);
+    }
+  });
+
   test('bounds generic API metadata and redacts header and body credential echoes', async () => {
     const keys = ['HOPLITE_API_KEY', 'HOPLITE_API_BASE_URL', 'HOPLITE_MUTATION_ALLOWLIST'] as const;
     const previous = keys.map(key => process.env[key]);

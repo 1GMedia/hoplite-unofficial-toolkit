@@ -5,7 +5,21 @@ sandbox shells, push, handoff, and ACP. This project owns guarded operational
 automation, bounded evidence, and workflow policy. They can be installed and
 used together without sharing private credential-storage internals.
 
-## Latest documentation review: 2026-10-05
+## PR status contract review: 2026-10-09
+
+The public `GET /api/threads/{id}/pr/status` schema no longer requires at least
+one `allowedMergeMethods` entry and adds optional boolean `mergeQueueRequired`.
+An empty list must stay empty; an absent queue flag must not be interpreted as
+`false`. Neither field authorizes merging.
+
+Reviewed the direct API and MCP read callers: both preserve these fields through
+the shared bounded/redacted output handling, without a nonempty-array validator
+or merge-method default. No runtime change is needed. Offline regression tests
+cover empty methods and true/false/absent queue flags, plus detection of both
+schema changes. Only this operation's pin was intentionally refreshed; the
+other 19 operations are unchanged. The downloaded public spec matches all 20.
+
+## Documentation review: 2026-10-05
 
 | Authoritative source | Companion guidance |
 | --- | --- |
