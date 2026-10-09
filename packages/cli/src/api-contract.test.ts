@@ -186,9 +186,10 @@ describe('public API contract (offline fixtures only)', () => {
     const original = JSON.stringify(buildApiContract(spec));
     const run = (...args: string[]) => Bun.spawnSync([process.execPath, script, ...args]);
     try {
-      for (const path of ['scripts', 'docs', 'packages/cli/src']) mkdirSync(join(dir, path), { recursive: true });
+      for (const path of ['scripts', 'docs', 'packages/cli/src/generated']) mkdirSync(join(dir, path), { recursive: true });
       writeFileSync(script, readFileSync(new URL('../../../scripts/check-api-contract.ts', import.meta.url)));
       writeFileSync(join(dir, 'packages/cli/src/api-contract.ts'), readFileSync(new URL('./api-contract.ts', import.meta.url)));
+      writeFileSync(join(dir, 'packages/cli/src/generated/operations.ts'), readFileSync(new URL('./generated/operations.ts', import.meta.url)));
       writeFileSync(snapshotPath, original);
       writeFileSync(file, JSON.stringify(spec));
       const matched = run('--file', file);
