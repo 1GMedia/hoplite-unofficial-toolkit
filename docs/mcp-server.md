@@ -1,6 +1,7 @@
 # Hoplite MCP: official server and toolkit transport
 
-Reviewed 2026-10-05 against the official
+Documentation sources reviewed 2026-10-05; toolkit transport updated 2026-10-09.
+Based on the official
 [MCP server guide](https://hoplite.sh/docs/cli/mcp-server) and
 [CLI configuration](https://hoplite.sh/docs/cli/configuration).
 
@@ -12,7 +13,7 @@ MCP tools is a different integration, documented under
 [agent MCP servers](https://hoplite.sh/docs/agent/mcp).
 The official CLI can also explicitly bridge loopback MCP servers on the user's
 machine; see [local-tool opt-in](official-cli.md#opt-in-tools-on-your-machine).
-That is not the hosted Hoplite MCP endpoint or this toolkit's OAuth transport.
+That is not the hosted Hoplite MCP endpoint or this toolkit's hosted transport.
 
 Discovery metadata is published at
 `https://api.hoplite.sh/.well-known/mcp.json`, also mirrored on `hoplite.sh`.
@@ -26,7 +27,7 @@ Discovery advertises capabilities; it is not authentication or permission to act
 | --- | --- | --- |
 | Interactive external MCP client | OAuth browser sign-in and workspace selection | Acts as the signed-in user |
 | Headless external MCP client | API key or project-restricted service-account key | Key permissions and project scope still apply; user-only routes require OAuth |
-| This toolkit's default MCP transport | OAuth file created by `hoplite mcp start` | Does not currently use `HOPLITE_API_KEY` for MCP requests |
+| This toolkit's default MCP transport | Explicit `HOPLITE_API_KEY`, otherwise OAuth from `hoplite mcp start` | Env key selects identity; no fallback on invalid credentials |
 | This toolkit's direct API transport | Explicit key plus `--transport api` | Documented dedicated-command subset, not general MCP access |
 
 For an OAuth-capable client, the official Claude Code setup is:
@@ -90,8 +91,8 @@ are supplied. Discover models rather than hardcoding the documentation's example
 
 `hoplite_call_api` supports a much broader reviewed read/write surface than
 this toolkit. Use `bun run hoplite-toolkit -- tools` for live tool-schema
-discovery when authorized; normal tests never do so. This toolkit only exposes
-its dedicated guarded actions; its separate generic `api` command is direct
+discovery when authorized; normal tests never do so. This toolkit exposes dedicated guarded writes and generic `mcp-api` reads;
+its separate generic `api` command is direct
 REST and GET/HEAD-only. Toolkit allowlists and confirmation flags are **not**
 enforced by other MCP clients or the hosted server on our behalf.
 
@@ -114,3 +115,44 @@ Important upstream details:
 
 See [API support](api.md) and [route classification](compatibility.md) for the
 toolkit's narrower contract and authorization rules.
+
+## Toolkit hosted transport (2026-10-09)
+
+MCP uses the fixed hosted endpoint. `HOPLITE_BASE_URL` and
+`HOPLITE_API_BASE_URL` still configure direct REST only; they cannot redirect
+an MCP credential. OAuth resource metadata must match the hosted endpoint.
+An explicitly set key must match `hop_...` or `hop_svc_...`; unset the variable
+to choose OAuth. `auth` remains an OAuth-file inspection command, not a remote
+MCP key validation check; `api-auth` remains a local REST credential check.
+
+- `operations` checks the server's advertised tools and calls
+  `hoplite_list_api_operations` with no filters. Servers without that tool fail
+  closed; use `tools` to inspect the deployed schemas. Discovery is not a
+  guarantee that every deployment or credential supports the same routes.
+- `mcp-api --path /api/model-providers` calls `hoplite_call_api` for GET/HEAD
+  reads. Only literal `/api/` paths are accepted (no URL, query string, encoded
+  path, traversal, or request body). For filtered/paginated reads, use dedicated
+  commands. General query/filter discovery support remains future work.
+- All `hoplite_call_api` writes pass a central local policy gate, even after
+  dedicated command validation. Creation requires an exact project allowlist;
+  existing-thread actions require the exact thread. All require confirmation
+  and a matching explicit operation/message ID; stop also matches the exact
+  run ID. Only the existing create/message/stop/retry/compact/title families
+  are enabled. Discovery never expands that list automatically.
+- **Breaking safety tightening:** every dedicated write, over either transport,
+  requires `--client-operation-id` (maximum 64 characters). The toolkit no longer
+  generates IDs. Keep the same ID for reconciliation; do not blindly retry.
+- MCP redirects/reconnect retries are disabled. Per-request network deadline is
+  20 seconds and response buffering is capped at 2 MiB (the hosted API tool's
+  own body cap remains 1 MiB). Returned values use bounded/redacted output and
+  an aggregate 64 KiB limit; oversized output fails instead of being published.
+  Unsolicited server notification streams are not opened.
+- Transport/tool errors suppress response bodies and credentials. A failed write
+  may already have succeeded remotely. Preserve its operation ID and reconcile
+  through reads; acceptance still does not prove completion.
+
+This increment is the hosted transport foundation, not full protocol parity.
+Event replay/streaming, webhook verification, REST binary attachment transfer,
+and Platform API stubs/types remain unimplemented. It has no dependency on the
+contract-pin or upstream-monitor PRs. Tests use synthetic MCP responses only;
+no live authenticated interoperability is claimed.

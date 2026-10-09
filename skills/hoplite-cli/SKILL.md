@@ -23,7 +23,8 @@ configuring an integration:
 - [ACP](../../docs/acp.md): official local editor bridge or remote session API;
   this toolkit does not implement an ACP transport.
 - [MCP](../../docs/mcp-server.md): external-client OAuth/API-key setup. This
-  toolkit's own MCP transport currently uses OAuth only.
+  toolkit's MCP transport uses an explicit `HOPLITE_API_KEY` first, otherwise OAuth.
+  Unset the variable to choose OAuth; invalid keys do not fall back.
 - [API](../../docs/api.md): implemented direct-API commands and upstream-only
   capabilities; the Platform API is a separate unsupported surface.
 
@@ -49,6 +50,11 @@ run the official interactive flow:
 ```bash
 hoplite mcp start
 ```
+
+Use `operations` for advertised `hoplite_list_api_operations` discovery and
+`mcp-api --path /api/model-providers` for generic hosted GET/HEAD reads.
+Discovery does not authorize writes. Dedicated writes retain exact allowlists,
+confirmation, explicit operation IDs, and exact-run stop guards.
 
 ## Read workflow
 
@@ -79,8 +85,7 @@ bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts message \
   --confirm
 ```
 
-`thread-stop` additionally requires the exact current run ID. Task creation
-requires an explicit idempotency key. Do not retry a mutation with a different
+`thread-stop` additionally requires the exact current run ID. Every write requires an explicit `--client-operation-id` (maximum 64 characters). Do not retry a mutation with a different
 operation ID when the first result is ambiguous.
 
 Creation also requires `project:<project-id>` in the mutation allowlist. That

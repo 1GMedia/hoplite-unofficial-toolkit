@@ -12,7 +12,7 @@ import {
 import { dirname } from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { hostedTransport, HOSTED_MCP_URL, mcpApiKey } from './mcp-transport';
 import { hopliteConfigPath, loadApiCredential } from './api-auth';
 import { HopliteApiClient, type ApiRequest } from './api-client';
 
@@ -432,20 +432,17 @@ function parseToolJson(result: unknown): JsonObject {
   if (!text) throw new Error('Hoplite MCP returned no JSON text payload');
   const parsed = JSON.parse(text) as JsonObject;
   if (value.isError) {
-    throw new Error(`Hoplite MCP tool failed: ${JSON.stringify(parsed)}`);
+    throw new Error('Hoplite MCP tool failed; response body suppressed');
   }
   return parsed;
 }
 
 async function withClient<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  const oauth = await loadOAuthState();
-  const transport = new StreamableHTTPClientTransport(new URL(oauth.resource), {
-    requestInit: {
-      headers: {
-        Authorization: `${oauth.tokenType} ${oauth.accessToken}`,
-      },
-    },
-  });
+  const key = mcpApiKey();
+  const oauth = key ? undefined : await loadOAuthState();
+  if (oauth && oauth.resource !== HOSTED_MCP_URL) throw new Error('OAuth resource must be the hosted MCP endpoint');
+  const secret = key ?? oauth!.accessToken;
+  const transport = hostedTransport(key ? `Bearer ${key}` : `${oauth!.tokenType} ${secret}`);
   const client = new Client(
     { name: 'hoplite-unofficial-toolkit', version: '0.1.0' },
     { capabilities: {} },
@@ -453,13 +450,13 @@ async function withClient<T>(work: (client: Client) => Promise<T>): Promise<T> {
 
   try {
     await client.connect(transport);
-    return await work(client);
-  } catch (error) {
-    const message = safeErrorMessage(error);
-    if (/token expired|401|unauthorized/i.test(message)) {
-      throw new Error('Hoplite OAuth token expired. Run: hoplite mcp start');
+    const safe = sanitizeOutput(await work(client), 0, [secret]);
+    if (Buffer.byteLength(JSON.stringify(safe)) > 64 * 1024) {
+      throw new Error('MCP output exceeds 64 KiB; request a smaller page');
     }
-    throw error;
+    return safe as T;
+  } catch {
+    throw new Error('MCP request failed; no automatic retry. For a write, outcome may be unknown: retain the operation ID and reconcile with reads. Check credentials or use hoplite mcp start for OAuth.');
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -469,13 +466,54 @@ async function callTool(
   client: Client,
   name: string,
   args: JsonObject,
+  flags = new Map<string, string>(),
 ): Promise<JsonObject> {
+  if (name === 'hoplite_call_api') guardMcpApiRequest(args, flags);
   const result = await client.callTool(
     { name, arguments: args },
     undefined,
     { timeout: DEFAULT_TIMEOUT_MS, maxTotalTimeout: DEFAULT_TIMEOUT_MS },
   );
   return parseToolJson(result);
+}
+
+export function guardMcpApiRequest(
+  request: JsonObject,
+  flags: Map<string, string>,
+  allowlist = configuredMutationAllowlist(),
+): void {
+  const method = request.method;
+  const path = request.path;
+  if (typeof path !== 'string' || !/^\/api\/[A-Za-z0-9_/-]+$/.test(path) || path.includes('//')) {
+    throw new Error('MCP API path must be a literal /api/ path without query, encoding, or traversal');
+  }
+  if (method === 'GET' || method === 'HEAD') {
+    if (request.body !== undefined) throw new Error('Read requests cannot have a body');
+    return;
+  }
+  requireConfirmation(flags, String(method));
+  if (method !== 'POST' || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
+    throw new Error('Unsupported MCP write; use a dedicated command');
+  }
+  const body = request.body as JsonObject;
+  const operationId = validatedClientOperationId(flags.get('client-operation-id'), 64);
+  const bodyId = body.clientOperationId ?? body.clientMessageId;
+  if (bodyId !== operationId || (body.clientMessageId !== undefined && body.clientMessageId !== operationId)) {
+    throw new Error('MCP write body must match the explicit operation ID');
+  }
+  if (path === '/api/threads') {
+    if (typeof body.projectId !== 'string' || !THREAD_ID_RE.test(body.projectId) || !allowlist.has('project:' + body.projectId)) {
+      throw new Error('Creation requires an exact project:<project-id> allowlist entry');
+    }
+    return;
+  }
+  const match = path.match(/^\/api\/threads\/([A-Za-z0-9][A-Za-z0-9_-]{0,511})\/(messages|stop|retry|compact|title)$/);
+  if (!match) throw new Error('Unsupported MCP write; use a dedicated command');
+  requireAllowlistedThread(match[1]!, allowlist);
+  if (match[2] === 'stop') {
+    const runId = validatedOpaqueId(flags.get('run-id'), 'run id');
+    if (body.runId !== runId) throw new Error('Stop body must match the exact run ID');
+  }
 }
 
 function validatedThreadId(value: string | undefined): string {
@@ -495,14 +533,10 @@ function validatedOpaqueId(value: string | undefined, label: string): string {
 
 function validatedClientOperationId(
   value: string | undefined,
-  maximum = 128,
-  required = false,
+  maximum = 64,
 ): string {
   const normalized = value?.trim();
-  if (!normalized) {
-    if (required) throw new Error('An explicit --client-operation-id is required');
-    return `codex-${Date.now()}-${crypto.randomUUID().slice(0, 12)}`;
-  }
+  if (!normalized) throw new Error('An explicit --client-operation-id is required');
   if (normalized.length > maximum || /\s/.test(normalized)) {
     throw new Error(`client-operation-id must be ${maximum} characters or fewer and contain no whitespace`);
   }
@@ -523,11 +557,12 @@ export function sanitizeOutput(value: unknown, depth = 0, secrets: readonly stri
 
   const result: JsonObject = {};
   for (const [key, nested] of Object.entries(value as JsonObject).slice(0, 80)) {
+    const safeKey = redactSecrets(key, secrets).slice(0, 256);
     if (OUTPUT_SENSITIVE_KEY_RE.test(key)) {
-      result[key] = '[redacted]';
+      result[safeKey] = '[redacted]';
       continue;
     }
-    result[key] = sanitizeOutput(nested, depth + 1, secrets);
+    result[safeKey] = sanitizeOutput(nested, depth + 1, secrets);
   }
   return result;
 }
@@ -597,6 +632,7 @@ export function buildThreadActionRequest(
   requireConfirmation(flags, 'POST');
   const threadId = validatedThreadId(positionals[0]);
   requireAllowlistedThread(threadId, allowlist);
+  if (command === 'thread-stop') validatedOpaqueId(flags.get('run-id'), 'run id');
   const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'), 64);
   const actionByCommand: Record<string, string> = {
     'thread-stop': 'stop',
@@ -628,7 +664,7 @@ export function createThreadBodyFromFlags(
   const prompt = (flags.get('prompt') ?? flags.get('text') ?? positionals.slice(1).join(' ')).trim();
   if (!prompt) throw new Error('A non-empty thread prompt is required via --prompt, --text, or trailing arguments');
   if (prompt.length > 100_000) throw new Error('Thread prompt exceeds 100 KB');
-  const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'), 64, true);
+  const clientOperationId = validatedClientOperationId(flags.get('client-operation-id'), 64);
   if (!THREAD_ID_RE.test(projectId) || !allowlist.has(`project:${projectId}`)) {
     throw new Error('Creation requires an exact project:<project-id> entry in HOPLITE_MUTATION_ALLOWLIST');
   }
@@ -711,7 +747,7 @@ async function sendMessage(
     method: 'POST',
     path: `/api/threads/${threadId}/messages`,
     body: { content, clientMessageId: clientOperationId },
-  });
+  }, flags);
   const body = response.body && typeof response.body === 'object'
     ? response.body as JsonObject
     : {};
@@ -759,7 +795,7 @@ async function runThreadAction(
     method: request.method,
     path: request.path,
     body: request.body,
-  });
+  }, flags);
   return {
     ok: response.ok === true,
     status: response.status ?? null,
@@ -782,7 +818,7 @@ async function createThread(
     method: 'POST',
     path: '/api/threads',
     body,
-  });
+  }, flags);
   const responseBody = response.body && typeof response.body === 'object'
     ? response.body as JsonObject
     : {};
@@ -1064,6 +1100,8 @@ function help(): JsonObject {
       'thread-auto-title': 'Regenerate an allowlisted task title; requires --confirm',
       models: 'List current Hoplite model providers',
       tools: 'List live Hoplite MCP tool schemas',
+      operations: 'Discover hosted API operations with hoplite_list_api_operations',
+      'mcp-api': 'Read a hosted reviewed API path via --path; GET/HEAD only',
       api: 'GET/HEAD one explicitly supplied API route for one allowlisted thread; generic writes are disabled',
       'api-auth': 'Check local API-key configuration without contacting the server or printing secrets',
       message: 'Send a message to one allowlisted existing thread through the authenticated MCP session; requires --confirm',
@@ -1090,6 +1128,15 @@ export async function run(argv: string[]): Promise<JsonObject> {
     const request = buildApiCommandRequest(parsed);
     const credential = loadApiCredential();
     return executeApiCommandRequest(request, new HopliteApiClient(credential), [credential.key]);
+  }
+
+  if (THREAD_ACTION_COMMANDS.has(parsed.command)) buildThreadActionRequest(parsed.command, parsed.positionals, parsed.flags);
+  if (parsed.command === 'create-thread') createThreadBodyFromFlags(parsed.positionals, parsed.flags);
+  if (parsed.command === 'message') buildApiCommandRequest(parsed);
+  if (parsed.command === 'mcp-api') {
+    const method = (parsed.flags.get('method') ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') throw new Error('mcp-api is GET/HEAD-only; use dedicated guarded writes');
+    guardMcpApiRequest({ method, path: parsed.flags.get('path') }, parsed.flags);
   }
 
   return withClient(async client => {
@@ -1137,6 +1184,18 @@ export async function run(argv: string[]): Promise<JsonObject> {
             recentMessages: messages,
           },
         };
+      }
+      case 'operations': {
+        const listed = await client.listTools(undefined, { timeout: DEFAULT_TIMEOUT_MS });
+        if (!listed.tools.some(tool => tool.name === 'hoplite_list_api_operations')) {
+          throw new Error('Server does not advertise API-operation discovery');
+        }
+        return callTool(client, 'hoplite_list_api_operations', {});
+      }
+      case 'mcp-api': {
+        const method = (parsed.flags.get('method') ?? 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD') throw new Error('mcp-api is GET/HEAD-only; use dedicated guarded writes');
+        return callTool(client, 'hoplite_call_api', { method, path: parsed.flags.get('path') });
       }
       case 'models':
         return callTool(client, 'hoplite_call_api', {

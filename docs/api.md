@@ -66,8 +66,8 @@ MCP. The full upstream catalog is **not** the toolkit's command inventory.
 Existing-thread mutations require an exact allowlist entry and `--confirm`.
 Creation requires `project:<project-id>`, confirmation, and an explicit
 `--client-operation-id`. Stop additionally requires the exact run ID. A project
-entry does not authorize actions on existing threads. Prefer a stable explicit
-operation ID for every write; do not retry an ambiguous result with a new ID.
+entry does not authorize actions on existing threads. An explicit stable
+operation ID is required for every write; do not retry an ambiguous result with a new ID.
 
 API transport sends `Idempotency-Key`, matching `clientOperationId` or
 `clientMessageId` in the request body. Upstream requires this header for

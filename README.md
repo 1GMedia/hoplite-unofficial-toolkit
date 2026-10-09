@@ -45,7 +45,24 @@ distinct `bun run hoplite-toolkit -- ...` alias avoids command-name confusion;
 the existing `bun run hoplite -- ...` alias remains supported. Official `status`
 reports local CLI configuration; toolkit `status` scans tasks.
 
-The existing MCP transport remains the default. Dedicated documented commands
+The hosted MCP transport remains the default at `https://api.hoplite.sh/mcp`.
+An explicitly set `HOPLITE_API_KEY` (`hop_...` or `hop_svc_...`) takes precedence;
+unset it to use the OAuth file from `hoplite mcp start`. Invalid configured keys
+fail closed without falling back to another identity. Keys never enter CLI args.
+
+```bash
+bun run hoplite-toolkit -- operations
+bun run hoplite-toolkit -- mcp-api --path /api/model-providers
+```
+
+`operations` invokes advertised `hoplite_list_api_operations` discovery;
+`mcp-api` offers bounded GET/HEAD coverage through `hoplite_call_api`. Discovery
+does not grant write authorization. Generic writes stay disabled: use dedicated
+commands, an exact allowlist entry, `--confirm`, and an explicit
+`--client-operation-id` (now required for **every** write, including direct API
+transport). See [hosted MCP](docs/mcp-server.md) for limits and remaining gaps.
+
+Dedicated documented commands
 can instead use `--transport api` with an explicitly configured API key:
 
 ```bash
