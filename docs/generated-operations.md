@@ -66,9 +66,10 @@ and malformed metadata fail generation.
 The pinned-contract checker selects its existing 20 reviewed operation IDs and
 derives their method/path pairs from generated Direct metadata. Selection remains
 explicit: a new upstream operation must not silently expand the toolkit's contract
-or write surface. The pinned response/parameter schemas are unchanged; the
-separate strict contract checker still detects drift. In particular, this step
-does not incorporate PR #22's pending PR-status contract update.
+or write surface. Generation never rewrites the pinned response/parameter
+schemas; the separate strict contract checker still detects drift. The
+PR-status contract update from merged PR #22 is inherited from `main` and
+matches the committed Direct spec.
 
 The MCP gate matches generated Direct methods/path templates and uses their
 read/write classification and a small reviewed write-ID policy. Unknown hosted

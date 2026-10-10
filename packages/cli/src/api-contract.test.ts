@@ -68,6 +68,28 @@ describe('public API contract (offline fixtures only)', () => {
     expect(paths.some(path => path.includes('/responses/') && path.endsWith('/maxLength'))).toBe(true);
   });
 
+  test('tracks empty merge-method support and optional merge-queue metadata', () => {
+    const before = fixture();
+    const after = fixture();
+    Object.assign(before.components.schemas.Fixture.properties, {
+      allowedMergeMethods: { type: 'array', items: { type: 'string' }, minItems: 1 },
+    });
+    Object.assign(after.components.schemas.Fixture.properties, {
+      allowedMergeMethods: { type: 'array', items: { type: 'string' } },
+      mergeQueueRequired: { type: 'boolean' },
+    });
+    const differences = contractDifferences(contract(before), contract(after));
+    expect(differences.filter(path => path.endsWith('/allowedMergeMethods/minItems'))).toHaveLength(2);
+    expect(differences.filter(path => path.endsWith('/mergeQueueRequired'))).toHaveLength(2);
+    expect(differences).toHaveLength(4);
+    const pin = JSON.parse(readFileSync(new URL('../../../docs/api-contract.json', import.meta.url), 'utf8'));
+    const status = pin.operations['GET /api/threads/{id}/pr/status'].responses['200']
+      .content['application/json'].schema.properties.pullRequestStatus;
+    expect(status.properties.allowedMergeMethods).not.toHaveProperty('minItems');
+    expect(status.properties.mergeQueueRequired).toEqual({ type: 'boolean' });
+    expect(status.required).not.toContain('mergeQueueRequired');
+  });
+
   test('detects operation ID, parameter, required-field, and response-status drift', () => {
     const before = contract(fixture());
     const changes = [

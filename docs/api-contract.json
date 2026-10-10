@@ -16462,7 +16462,6 @@
                           ],
                           "type": "string"
                         },
-                        "minItems": 1,
                         "type": "array"
                       },
                       "baseRef": {
@@ -16632,6 +16631,9 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "mergeQueueRequired": {
+                        "type": "boolean"
                       },
                       "mergeQueued": {
                         "type": "boolean"
