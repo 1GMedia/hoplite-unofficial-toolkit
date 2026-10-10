@@ -281,6 +281,41 @@ ln -s "$(pwd)/skills/hoplite-cli" \
 
 Restart Codex after adding the skill.
 
+## Install as a plugin
+
+The Claude Code, Cursor, and Codex plugins bundle **both** `hoplite-cli` and
+`hoplite-env-import` from this repository, plus the hosted MCP server at
+`https://api.hoplite.sh/mcp`. Use a current client with plugin support. Keep the
+full repository tree: the CLI skill imports `packages/cli`. Run
+`bun install --frozen-lockfile` at the active plugin root, including in a copied
+or cached installation, before using that skill; the ENV helper needs Python 3.
+There are no automatic install hooks.
+
+Inject `HOPLITE_API_KEY` securely into the client process environment before
+launching it; never paste a key into a manifest. Each client uses its own env
+reference syntax. Prefer a project-restricted, read-only key and leave automatic
+tool approval off. Direct hosted MCP calls **do not inherit** the toolkit's
+allowlist, `--confirm`, idempotency, exact-run, or output-redaction safeguards.
+Use the guarded CLI for operations; never use raw MCP to bypass a refusal.
+Disable the hosted server in the client if those boundaries cannot be enforced.
+
+- **Claude Code:** load this checkout for the session with
+  `claude --plugin-dir /absolute/path/to/checkout`. Skills appear as
+  `/hoplite-toolkit:hoplite-cli` and `/hoplite-toolkit:hoplite-env-import`.
+  See the [plugin format](https://code.claude.com/docs/en/plugins-reference).
+- **Cursor:** copy a clean full checkout (including hidden plugin directories,
+  excluding credentials) to `~/.cursor/plugins/local/hoplite-toolkit`, install
+  its Bun dependencies, then run **Developer: Reload Window** and check
+  **Customize**. External-target symlinks are not supported; organization policy
+  may disable local imports. See [local plugin installation](https://cursor.com/docs/plugins#test-plugins-locally)
+  and the [manifest reference](https://cursor.com/docs/reference/plugins).
+- **Codex:** from this checkout run `codex plugin marketplace add .`, then
+  `codex plugin add hoplite-toolkit@hoplite-toolkit-local`, and start a new
+  session. The included local marketplace points to the full repository root.
+  See [plugin packaging and local installation](https://developers.openai.com/plugins/build/plugins).
+
+This is local plugin packaging, not a listing in any official marketplace.
+
 ## Development
 
 ```bash
