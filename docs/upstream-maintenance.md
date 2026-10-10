@@ -64,6 +64,10 @@ from `sitemap.xml`, and every listed page in these exact families:
 sitemap. Pages use `Accept: text/markdown`. No `lastmod` dependency is used.
 New/deleted sitemap pages and changed page contents are detected. Other page
 families are inventoried through the sitemap hash but their bodies are not read.
+The public [Factory example runner](https://hoplite.sh/docs/factory-example.mjs)
+is also fetched independently with `Accept: text/javascript` and hashed without
+normalization. Review runner drift against `skills/hoplite-factory/` separately;
+a snapshot refresh does not update the vendored runner or its recorded hash.
 The npm CLI version is queried with `npm view @usehoplite/cli version`; nothing
 is installed or upgraded.
 

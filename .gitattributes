@@ -1,2 +1,3 @@
 packages/cli/src/generated/*.ts linguist-generated=true
 specs/*-openapi.json linguist-vendored=true
+skills/hoplite-factory/scripts/factory-example.mjs -text linguist-vendored=true

@@ -10,6 +10,12 @@ const fixtureFetch = (overrides: Record<string, string> = {}) => (async (input: 
   const path = url.slice(ORIGIN.length);
   if (path === '/sitemap.xml') return new Response(overrides[path] ?? xml);
   if (path.endsWith('.json')) return Response.json({ openapi: '3.1.0', paths: {} });
+  if (path === '/docs/factory-example.mjs') {
+    expect(new Headers(init?.headers).get('Accept')).toBe('text/javascript');
+    expect(new Headers(init?.headers).has('Authorization')).toBe(false);
+    expect(init?.credentials).toBe('omit');
+    return new Response(overrides[path] ?? 'export const fixture = "offline factory runner";\n');
+  }
   expect(new Headers(init?.headers).get('Accept')).toBe('text/markdown');
   return new Response(overrides[path] ?? '# Obvious offline fixture');
 }) as Fetcher;
@@ -42,6 +48,17 @@ describe('upstream drift (offline fixtures only)', () => {
     expect(diff).toHaveLength(4);
     expect(diff.some(line => line.includes('/docs/cli/fixture:') && line.endsWith('absent'))).toBe(true);
     expect(diff.join('\n')).not.toContain('Changed fixture');
+  });
+
+  test('detects Factory runner byte changes without including its source in the summary', async () => {
+    const path = '/docs/factory-example.mjs';
+    const runner = 'export const fixture = "offline factory runner";\n';
+    const first = await collect(empty, { fetcher: fixtureFetch({ [path]: runner }), version: async () => '3.0.0' });
+    const updated = await collect(first.snapshot, { fetcher: fixtureFetch({ [path]: runner + '\n' }), version: async () => '3.0.0' });
+    expect(first.snapshot.hashes[ORIGIN + path]).toBe(hash(runner));
+    expect(changes(first.snapshot, updated.snapshot)).toEqual([
+      '- ' + ORIGIN + path + ': ' + hash(runner) + ' → ' + hash(runner + '\n'),
+    ]);
   });
 
   test('fails closed on unavailable, oversized, HTML, and malformed sources or npm output', async () => {

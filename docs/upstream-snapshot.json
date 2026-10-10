@@ -133,6 +133,7 @@
     "https://hoplite.sh/docs/cli/interactive": "a8bad940ac6a24b95606b5cb90f28140e9d1c8b9dec743561c52794e2f68420a",
     "https://hoplite.sh/docs/cli/mcp-server": "6e78840d387cd1bb9a805a6211b6579b571bdf2f67ee4133a02805d72fda88b7",
     "https://hoplite.sh/docs/factory": "7d8cc29836784f6a477a22df7c5544a7795ee78489236be83a228f2dc5f48244",
+    "https://hoplite.sh/docs/factory-example.mjs": "bcb6575785e4a5652c844a7010fcdaba861eddc85ead5a4516366f6c5538c2f0",
     "https://hoplite.sh/docs/factory/events": "7124bf07df9b8c46b33efeaa2c6a2b9b34efef54274bce21e844ea343f03b9fb",
     "https://hoplite.sh/docs/factory/retries": "bd303892ca096422e52d047729ebe75bbe2dfa6b15a7a28ff6d8f5a7690b211b",
     "https://hoplite.sh/docs/factory/webhooks": "5730c4ba310db599b3b2d839a2d48e4df4e59599a930e1dfb6f523a5ae34920c",

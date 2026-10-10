@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 export const ORIGIN = 'https://hoplite.sh';
 export const MCP = 'https://api.hoplite.sh/mcp';
 export const ROOTS = ['/docs/cli', '/docs/factory', '/docs/platform', '/docs/api', '/docs/agent/mcp'];
-export const SOURCES = ['/docs/openapi.json', '/docs/platform-openapi.json', '/llms.txt'];
+export const SOURCES = ['/docs/openapi.json', '/docs/platform-openapi.json', '/llms.txt', '/docs/factory-example.mjs'];
 const MAX_BYTES = 8 * 1024 * 1024;
 export type Snapshot = { formatVersion: 1; hashes: Record<string, string>; cliVersion: string };
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -54,7 +54,7 @@ async function bounded(response: Response): Promise<string> {
 
 async function publicText(path: string, fetcher: Fetcher): Promise<string> {
   const response = await fetcher(ORIGIN + path, {
-    headers: { Accept: path.endsWith('.json') ? 'application/json' : path.endsWith('.xml') ? 'application/xml' : 'text/markdown' },
+    headers: { Accept: path.endsWith('.json') ? 'application/json' : path.endsWith('.xml') ? 'application/xml' : path.endsWith('.mjs') ? 'text/javascript' : 'text/markdown' },
     credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(25_000),
   });
   const text = await bounded(response);
