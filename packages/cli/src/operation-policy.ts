@@ -3,12 +3,12 @@ import { directOperations, type OperationMetadata } from './generated/operations
 export type DirectOperation = OperationMetadata;
 export type McpWriteKind = 'create' | 'message' | 'stop' | 'retry' | 'compact' | 'title';
 
-const APPROVED_WRITE_KINDS: Readonly<Record<string, Exclude<McpWriteKind, 'title'>>> = {
-  createThread: 'create',
-  appendThreadMessage: 'message',
-  stopRun: 'stop',
-  retryThread: 'retry',
-  compactThread: 'compact',
+const APPROVED_WRITE_KINDS: Readonly<Record<string, { kind: Exclude<McpWriteKind, 'title'>; path: string }>> = {
+  createThread: { kind: 'create', path: '/api/threads' },
+  appendThreadMessage: { kind: 'message', path: '/api/threads/{id}/messages' },
+  stopRun: { kind: 'stop', path: '/api/threads/{id}/stop' },
+  retryThread: { kind: 'retry', path: '/api/threads/{id}/retry' },
+  compactThread: { kind: 'compact', path: '/api/threads/{id}/compact' },
 };
 
 function templateMatches(template: string, path: string): boolean {
@@ -43,8 +43,9 @@ export function mcpWriteKind(
   if (method.toUpperCase() !== 'POST') return undefined;
   const operation = matchDirectOperation(method, path, operations);
   if (operation?.access === 'write' && Object.hasOwn(APPROVED_WRITE_KINDS, operation.operationId)) {
-    const approvedKind = APPROVED_WRITE_KINDS[operation.operationId];
-    return approvedKind;
+    const approved = APPROVED_WRITE_KINDS[operation.operationId];
+    // Regeneration cannot move an approved write onto a different route.
+    if (operation.path === approved.path) return approved.kind;
   }
 
   // Legacy title updates are supported explicitly, not enabled by spec metadata.

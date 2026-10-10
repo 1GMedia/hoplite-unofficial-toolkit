@@ -56,6 +56,17 @@ describe('MCP operation policy', () => {
     ])).toBeUndefined();
   });
 
+  test('rejects approved IDs reassigned to different write routes', () => {
+    for (const id of ['createThread', 'appendThreadMessage', 'stopRun', 'retryThread', 'compactThread']) {
+      expect(mcpWriteKind('POST', '/api/threads/thr_fixture/unreviewed', [
+        operation(id, 'POST', '/api/threads/{id}/unreviewed', 'write'),
+      ])).toBeUndefined();
+    }
+    expect(mcpWriteKind('POST', '/api/threads/thr_fixture/stop', [
+      operation('appendThreadMessage', 'POST', '/api/threads/{id}/stop', 'write'),
+    ])).toBeUndefined();
+  });
+
   test('keeps the title compatibility exception explicit and method-limited', () => {
     expect(mcpWriteKind('POST', '/api/threads/thr_fixture/title', [])).toBe('title');
     expect(mcpWriteKind('GET', '/api/threads/thr_fixture/title', [])).toBeUndefined();
