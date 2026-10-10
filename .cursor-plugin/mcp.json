@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "hoplite": {
+      "url": "https://api.hoplite.sh/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:HOPLITE_API_KEY}"
+      }
+    }
+  }
+}

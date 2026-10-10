@@ -1,0 +1,15 @@
+{
+  "name": "hoplite-toolkit",
+  "version": "0.1.0",
+  "description": "Unofficial Hoplite skills and hosted MCP integration; use the toolkit CLI for guarded operations.",
+  "skills": "./skills/",
+  "mcpServers": {
+    "hoplite": {
+      "type": "http",
+      "url": "https://api.hoplite.sh/mcp",
+      "headers": {
+        "Authorization": "Bearer ${HOPLITE_API_KEY}"
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "hoplite-toolkit",
+  "version": "0.1.0",
+  "description": "Unofficial Hoplite skills and hosted MCP integration; use the toolkit CLI for guarded operations.",
+  "skills": "./skills/",
+  "mcpServers": "./.cursor-plugin/mcp.json"
+}

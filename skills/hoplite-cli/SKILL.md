@@ -6,7 +6,10 @@ description: Inspect and operate Hoplite tasks through the unofficial guarded CL
 # Hoplite CLI
 
 Use the bundled wrapper instead of browser automation when its MCP/API surface
-covers the request.
+covers the request. Resolve `<skill-directory>` in the examples to the absolute
+directory containing this `SKILL.md`, including when loaded from a plugin cache.
+Keep the full plugin/repository tree intact: the wrapper imports `packages/cli`.
+Bun dependencies must be installed at that tree's root before using the wrapper.
 
 Use the official CLI for interactive sessions, sandbox shell/exec, handoff,
 push, and ACP. This skill is the operational companion, not a replacement.
@@ -38,7 +41,7 @@ Never print, copy, upload, or commit OAuth/API credentials. Check the stored
 OAuth state without exposing tokens:
 
 ```bash
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts auth
+bun "<skill-directory>/scripts/hoplite_cli.ts" auth
 ```
 
 This inspects local expiry/permissions only; it does not refresh or verify the
@@ -61,11 +64,11 @@ confirmation, explicit operation IDs, and exact-run stop guards.
 Start with the smallest relevant read:
 
 ```bash
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts projects
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts threads
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts inspect <thread-id>
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts repositories
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts messages <thread-id> --limit 100
+bun "<skill-directory>/scripts/hoplite_cli.ts" projects
+bun "<skill-directory>/scripts/hoplite_cli.ts" threads
+bun "<skill-directory>/scripts/hoplite_cli.ts" inspect <thread-id>
+bun "<skill-directory>/scripts/hoplite_cli.ts" repositories
+bun "<skill-directory>/scripts/hoplite_cli.ts" messages <thread-id> --limit 100
 ```
 
 Keep timeline and API output bounded. Task states such as `ready` or `running`
@@ -78,7 +81,7 @@ approved action, resolve the exact thread ID read-only, verify it is locally
 allowlisted, use a stable operation ID, and add `--confirm`:
 
 ```bash
-bun ~/.codex/skills/hoplite-cli/scripts/hoplite_cli.ts message \
+bun "<skill-directory>/scripts/hoplite_cli.ts" message \
   <thread-id> \
   --text 'Continue the assigned task' \
   --client-operation-id <stable-operation-id> \
