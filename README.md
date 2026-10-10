@@ -296,3 +296,9 @@ See [compatibility routes](docs/compatibility.md) and the
 
 Do not commit API keys, OAuth files, task transcripts, repository credentials,
 or private thread identifiers. See [SECURITY.md](SECURITY.md).
+
+### Generated API operations
+
+Direct and Platform operation types/metadata are generated from committed public
+spec snapshots. Run `bun run operations:generate` after a reviewed input update;
+CI enforces `bun run operations:check`. See [generation and safety boundaries](docs/generated-operations.md).

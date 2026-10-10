@@ -144,3 +144,10 @@ after a reviewed structural contract change and matching implementation/tests.
 Future capabilities should prefer published contracts. Undocumented operations
 remain isolated and clearly marked; public documentation does not eliminate
 the need for separate authorization and safety design.
+
+## Offline operation generation
+
+See [generated operations](generated-operations.md) for the committed Direct and
+Platform inputs, generated request/response types, metadata semantics, and CI
+staleness check. Regenerating these outputs does not approve new writes or refresh
+the separately reviewed contract pin.

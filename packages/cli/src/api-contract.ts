@@ -1,28 +1,37 @@
+import { directOperations } from './generated/operations';
+
 export const PUBLIC_SPEC_URL = 'https://hoplite.sh/docs/openapi.json';
 export const MAX_SPEC_BYTES = 8 * 1024 * 1024;
 
-export const TOOLKIT_ROUTES = [
-  ['GET', '/api/model-providers'],
-  ['GET', '/api/projects'],
-  ['GET', '/api/projects/{id}'],
-  ['GET', '/api/source-control/github/repositories'],
-  ['GET', '/api/source-control/github/repositories/{id}/branches'],
-  ['GET', '/api/source-control/github/repositories/{id}/inspect'],
-  ['GET', '/api/threads'],
-  ['POST', '/api/threads'],
-  ['GET', '/api/threads/{id}'],
-  ['GET', '/api/threads/{id}/runs'],
-  ['GET', '/api/threads/{id}/run-state'],
-  ['GET', '/api/threads/{id}/active-run'],
-  ['GET', '/api/threads/{id}/messages'],
-  ['POST', '/api/threads/{id}/messages'],
-  ['POST', '/api/threads/{id}/stop'],
-  ['POST', '/api/threads/{id}/retry'],
-  ['POST', '/api/threads/{id}/compact'],
-  ['GET', '/api/threads/{id}/usage'],
-  ['GET', '/api/threads/{id}/pr/status'],
-  ['GET', '/api/threads/{id}/pr/comments'],
+const TOOLKIT_OPERATION_IDS = [
+  'listModels',
+  'listProjects',
+  'getProject',
+  'listGitHubRepositories',
+  'listGitHubRepositoryBranches',
+  'inspectGitHubRepository',
+  'listThreads',
+  'createThread',
+  'getThread',
+  'listThreadRuns',
+  'getThreadRunState',
+  'getActiveRun',
+  'listThreadMessages',
+  'appendThreadMessage',
+  'stopRun',
+  'retryThread',
+  'compactThread',
+  'getThreadUsage',
+  'getPullRequestStatus',
+  'getPullRequestComments',
 ] as const;
+
+const operationsById = new Map(directOperations.map(operation => [operation.operationId, operation]));
+export const TOOLKIT_ROUTES = TOOLKIT_OPERATION_IDS.map(operationId => {
+  const operation = operationsById.get(operationId);
+  if (!operation) throw new Error(`Generated OpenAPI operation is missing: ${operationId}`);
+  return [operation.method, operation.path] as const;
+});
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type ObjectValue = { [key: string]: Json };

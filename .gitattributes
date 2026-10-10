@@ -1,0 +1,2 @@
+packages/cli/src/generated/*.ts linguist-generated=true
+specs/*-openapi.json linguist-vendored=true

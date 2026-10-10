@@ -15,6 +15,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { hostedTransport, HOSTED_MCP_URL, mcpApiKey } from './mcp-transport';
 import { hopliteConfigPath, loadApiCredential } from './api-auth';
 import { HopliteApiClient, type ApiRequest } from './api-client';
+import { matchDirectOperation, mcpWriteKind } from './operation-policy';
 
 type JsonObject = Record<string, unknown>;
 
@@ -487,12 +488,18 @@ export function guardMcpApiRequest(
   if (typeof path !== 'string' || !/^\/api\/[A-Za-z0-9_/-]+$/.test(path) || path.includes('//')) {
     throw new Error('MCP API path must be a literal /api/ path without query, encoding, or traversal');
   }
+  const operation = typeof method === 'string' ? matchDirectOperation(method, path) : undefined;
   if (method === 'GET' || method === 'HEAD') {
+    if (operation?.access === 'write') throw new Error('Write operations cannot use the read-only MCP API path');
     if (request.body !== undefined) throw new Error('Read requests cannot have a body');
     return;
   }
   requireConfirmation(flags, String(method));
   if (method !== 'POST' || !request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
+    throw new Error('Unsupported MCP write; use a dedicated command');
+  }
+  const writeKind = mcpWriteKind(method, path);
+  if (!writeKind || (operation && operation.access !== 'write' && writeKind !== 'title')) {
     throw new Error('Unsupported MCP write; use a dedicated command');
   }
   const body = request.body as JsonObject;
@@ -501,16 +508,16 @@ export function guardMcpApiRequest(
   if (bodyId !== operationId || (body.clientMessageId !== undefined && body.clientMessageId !== operationId)) {
     throw new Error('MCP write body must match the explicit operation ID');
   }
-  if (path === '/api/threads') {
+  if (writeKind === 'create') {
     if (typeof body.projectId !== 'string' || !THREAD_ID_RE.test(body.projectId) || !allowlist.has('project:' + body.projectId)) {
       throw new Error('Creation requires an exact project:<project-id> allowlist entry');
     }
     return;
   }
-  const match = path.match(/^\/api\/threads\/([A-Za-z0-9][A-Za-z0-9_-]{0,511})\/(messages|stop|retry|compact|title)$/);
+  const match = path.match(/^\/api\/threads\/([A-Za-z0-9][A-Za-z0-9_-]{0,511})\/[A-Za-z0-9_-]+$/);
   if (!match) throw new Error('Unsupported MCP write; use a dedicated command');
   requireAllowlistedThread(match[1]!, allowlist);
-  if (match[2] === 'stop') {
+  if (writeKind === 'stop') {
     const runId = validatedOpaqueId(flags.get('run-id'), 'run id');
     if (body.runId !== runId) throw new Error('Stop body must match the exact run ID');
   }
